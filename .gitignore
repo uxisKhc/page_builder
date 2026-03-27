@@ -1,3 +1,6 @@
+# 환경변수 (API 키 등 — 절대 커밋 금지)
+.env
+
 # Maven
 target/
 *.class
