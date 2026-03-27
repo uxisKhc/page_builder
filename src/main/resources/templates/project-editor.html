@@ -425,6 +425,7 @@ function sendChat() {
   const msg = document.getElementById('msgInput').value.trim();
   if (!msg || busy) return;
   if (!currentPageId && !sessionId) sessionId = crypto.randomUUID();
+  saveInputHistory(msg);
   appendBubble('user', msg);
   document.getElementById('msgInput').value = '';
   setBusy(true);
@@ -437,49 +438,34 @@ function sendChat() {
   clearAttach();
 
   const streamBubble = appendBubble('assistant', '', selectedModel, true);
-  let fullText = '';
-
-  const es = new EventSource('/api/chat/talk?' + new URLSearchParams(), {});
-  fetch('/api/chat/talk', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(req)})
-    .then(async res => {
-      // SSE via fetch
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const {done, value} = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, {stream: true});
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-        for (const line of lines) {
-          if (line.startsWith('data:')) {
-            const data = line.slice(5).trim();
-            if (line.startsWith('event:token') || true) {
-              // handled below
-            }
-          }
-        }
-      }
-    }).catch(() => {});
-
-  // Use proper SSE
-  readTalkStream(req, streamBubble);
+  readSseStream('/api/chat/talk', req, {
+    onToken(token, fullText) {
+      streamBubble.querySelector('.msg-content').textContent = fullText;
+      streamBubble.scrollIntoView({block: 'end'});
+    },
+    onComplete(payload) {
+      if (!currentPageId && payload.sessionId) sessionId = payload.sessionId;
+      streamBubble.classList.remove('streaming');
+      setBusy(false);
+    },
+    onError(msg) {
+      streamBubble.querySelector('.msg-content').textContent = '오류: ' + msg;
+      streamBubble.classList.remove('streaming');
+      setBusy(false);
+    }
+  });
 }
 
-function readTalkStream(req, bubble) {
-  const es = new EventSource('/api/chat/talk-sse?' + new URLSearchParams({dummy: Date.now()}));
-  // Fallback: use fetch streaming
-  let ctrl = new AbortController();
-  fetch('/api/chat/talk', {
+// ── 공통 SSE 스트림 리더 ──────────────────────────────
+function readSseStream(url, reqBody, {onToken, onComplete, onError, onStatus} = {}) {
+  fetch(url, {
     method: 'POST',
     headers: {'Content-Type': 'application/json', 'Accept': 'text/event-stream'},
-    body: JSON.stringify(req),
-    signal: ctrl.signal
+    body: JSON.stringify(reqBody)
   }).then(async res => {
     const reader = res.body.getReader();
     const dec = new TextDecoder();
-    let buf = '', fullText = '', eventName = '';
+    let buf = '', fullText = '', eventName = '', data = '';
     while (true) {
       const {done, value} = await reader.read();
       if (done) break;
@@ -487,34 +473,20 @@ function readTalkStream(req, bubble) {
       const parts = buf.split('\n\n');
       buf = parts.pop();
       for (const part of parts) {
-        const lines = part.split('\n');
-        eventName = '';
-        let data = '';
-        for (const l of lines) {
+        eventName = ''; data = '';
+        for (const l of part.split('\n')) {
           if (l.startsWith('event:')) eventName = l.slice(6).trim();
           else if (l.startsWith('data:')) data = l.slice(5).trim();
         }
-        if (eventName === 'token') {
-          fullText += data;
-          bubble.querySelector('.msg-content').textContent = fullText;
-          bubble.scrollIntoView({block:'end'});
-        } else if (eventName === 'complete') {
-          try {
-            const payload = JSON.parse(data);
-            if (!currentPageId && payload.sessionId) sessionId = payload.sessionId;
-            bubble.classList.remove('streaming');
-          } catch(e){}
-          setBusy(false);
-        } else if (eventName === 'error') {
-          bubble.querySelector('.msg-content').textContent = '오류: ' + data;
-          bubble.classList.remove('streaming');
-          setBusy(false);
+        if (eventName === 'status' && onStatus) onStatus(data);
+        else if (eventName === 'token' && onToken) { fullText += data; onToken(data, fullText); }
+        else if (eventName === 'complete') {
+          try { if (onComplete) onComplete(JSON.parse(data)); } catch(e) { if (onComplete) onComplete({}); }
         }
+        else if (eventName === 'error' && onError) onError(data);
       }
     }
-  }).catch(err => {
-    if (err.name !== 'AbortError') setBusy(false);
-  });
+  }).catch(err => { if (onError) onError(err.message); });
 }
 
 // ── HTML 생성 ────────────────────────────────────────
@@ -524,69 +496,45 @@ function generatePage() {
   if (!msg) { showToast('생성할 내용을 입력하세요.', 'warning'); return; }
   if (busy) return;
 
+  saveInputHistory(msg);
   appendBubble('user', msg);
   document.getElementById('msgInput').value = '';
-  setLoading(true, '페이지를 선택하여 HTML을 생성하고 있습니다...');
+  setLoading(true, 'HTML을 생성하고 있습니다...');
 
   const req = {
     message: msg, modelId: selectedModel,
     pageId: currentPageId, sessionId: sessionId,
     fileIds: attachedFileIds,
-    images: attachedImages.map(a => a.base64)
+    images: attachedImages.map(a => a.base64)  // 순수 base64
   };
   clearAttach();
 
   let tokenCount = 0, startMs = Date.now();
-  let accHtml = '';
 
-  fetch('/api/chat/stream', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json', 'Accept': 'text/event-stream'},
-    body: JSON.stringify(req)
-  }).then(async res => {
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '', eventName = '';
-    while (true) {
-      const {done, value} = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, {stream: true});
-      const parts = buf.split('\n\n');
-      buf = parts.pop();
-      for (const part of parts) {
-        const lines = part.split('\n');
-        eventName = '';
-        let data = '';
-        for (const l of lines) {
-          if (l.startsWith('event:')) eventName = l.slice(6).trim();
-          else if (l.startsWith('data:')) data = l.slice(5).trim();
-        }
-        if (eventName === 'status') {
-          document.getElementById('loadingSubtext').textContent = data;
-        } else if (eventName === 'token') {
-          accHtml += data;
-          tokenCount++;
-          if (tokenCount % 20 === 0) {
-            document.getElementById('loadingSubtext').textContent =
-              `토큰 ${tokenCount}개 생성됨 (${((Date.now()-startMs)/1000).toFixed(1)}s)`;
-          }
-        } else if (eventName === 'complete') {
-          try {
-            const payload = JSON.parse(data);
-            const html = payload.html || accHtml;
-            if (!currentPageId && payload.sessionId) sessionId = payload.sessionId;
-            setPreviewHtml(html);
-            appendBubble('assistant', `✅ HTML이 생성되었습니다. (${payload.tokenCount || tokenCount}토큰, ${payload.modelName || selectedModel})`);
-            setSaveIndicator('저장됨');
-          } catch(e){}
-          setLoading(false);
-        } else if (eventName === 'error') {
-          showToast('생성 오류: ' + data, 'danger');
-          setLoading(false);
-        }
+  readSseStream('/api/chat/stream', req, {
+    onStatus(text) {
+      document.getElementById('loadingSubtext').textContent = text;
+    },
+    onToken(token, fullText) {
+      tokenCount++;
+      if (tokenCount % 20 === 0) {
+        document.getElementById('loadingSubtext').textContent =
+          `토큰 ${tokenCount}개 생성됨 (${((Date.now()-startMs)/1000).toFixed(1)}s)`;
       }
+    },
+    onComplete(payload) {
+      if (!currentPageId && payload.sessionId) sessionId = payload.sessionId;
+      if (payload.html) setPreviewHtml(payload.html);
+      appendBubble('assistant',
+        `✅ HTML이 생성되었습니다. (${payload.tokenCount || tokenCount}토큰, ${payload.modelName || selectedModel})`);
+      setSaveIndicator('저장됨');
+      setLoading(false);
+    },
+    onError(msg) {
+      showToast('생성 오류: ' + msg, 'danger');
+      setLoading(false);
     }
-  }).catch(err => { showToast('연결 오류', 'danger'); setLoading(false); });
+  });
 }
 
 // ── 프리뷰 ──────────────────────────────────────────
@@ -684,8 +632,9 @@ function handleFileAttach(input) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    const b64 = e.target.result.split(',')[1];
-    attachedImages.push({base64: e.target.result, mime: file.type, name: file.name});
+    // data:image/...;base64,XXXX → XXXX 만 저장 (OllamaService가 prefix 직접 구성)
+    const pure64 = e.target.result.split(',')[1];
+    attachedImages.push({base64: pure64, name: file.name});
     addChip(file.name, () => {
       attachedImages = attachedImages.filter(a => a.name !== file.name);
     });
@@ -771,8 +720,54 @@ function toggleChat() {
   document.getElementById('chatPanel').classList.toggle('collapsed');
 }
 
+// ── 입력 히스토리 (localStorage 기반, 위아래 화살표) ─────
+const INPUT_HISTORY_KEY = 'pb_input_history';
+let inputHistory = JSON.parse(localStorage.getItem(INPUT_HISTORY_KEY) || '[]');
+let historyIndex = -1;
+let currentDraft = '';  // 화살키 탐색 전 현재 입력값 보존
+
+function saveInputHistory(msg) {
+  if (!msg) return;
+  // 중복 제거 후 맨 앞에 추가
+  inputHistory = inputHistory.filter(h => h !== msg);
+  inputHistory.unshift(msg);
+  if (inputHistory.length > 100) inputHistory = inputHistory.slice(0, 100);
+  localStorage.setItem(INPUT_HISTORY_KEY, JSON.stringify(inputHistory));
+  historyIndex = -1;
+}
+
 function handleKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+  const ta = document.getElementById('msgInput');
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChat();
+    historyIndex = -1;
+    return;
+  }
+  if (e.key === 'ArrowUp') {
+    // textarea가 한 줄이거나 커서가 첫 줄일 때만 히스토리 탐색
+    const lines = ta.value.split('\n');
+    const atFirstLine = ta.selectionStart <= lines[0].length;
+    if (!atFirstLine) return;
+    e.preventDefault();
+    if (historyIndex === -1) currentDraft = ta.value;
+    if (historyIndex < inputHistory.length - 1) {
+      historyIndex++;
+      ta.value = inputHistory[historyIndex];
+      ta.setSelectionRange(0, 0);
+    }
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    if (historyIndex === -1) return;
+    e.preventDefault();
+    historyIndex--;
+    ta.value = historyIndex === -1 ? currentDraft : inputHistory[historyIndex];
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    return;
+  }
+  // 다른 키를 누르면 히스토리 탐색 리셋
+  if (historyIndex !== -1 && e.key.length === 1) historyIndex = -1;
 }
 
 function showToast(msg, type = 'success') {

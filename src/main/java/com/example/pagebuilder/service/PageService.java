@@ -62,11 +62,16 @@ public class PageService {
             HtmlPage page = pageRepository.findByIdAndMember(pageId, member)
                     .orElseThrow(() -> new IllegalArgumentException("페이지를 찾을 수 없습니다."));
             List<ChatMessage> existing = chatMessageRepository.findByHtmlPageOrderByCreatedAtAsc(page);
+            // TEXT 메시지만 대화 히스토리로 포함 (HTML 메시지는 거대하므로 현재 htmlContent로 대체)
             for (ChatMessage msg : existing) {
-                history.add(Map.of("role", msg.getRole().toLowerCase(), "content", msg.getContent()));
+                if (!"HTML".equals(msg.getMsgType())) {
+                    history.add(Map.of("role", msg.getRole().toLowerCase(), "content", msg.getContent()));
+                }
             }
-            if (history.isEmpty() && page.getHtmlContent() != null) {
-                history.add(Map.of("role", "assistant", "content", page.getHtmlContent()));
+            // 현재 HTML을 항상 컨텍스트에 추가 (인플레이스 편집 반영 포함)
+            String currentHtml = page.getHtmlContent();
+            if (currentHtml != null && !currentHtml.isBlank() && !"<!-- 빈 페이지 -->".equals(currentHtml)) {
+                history.add(Map.of("role", "assistant", "content", currentHtml));
             }
         } else {
             if (sessionId == null || sessionId.isBlank()) {
@@ -75,11 +80,19 @@ public class PageService {
             List<ChatMessage> sessionMessages =
                     chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
             for (ChatMessage msg : sessionMessages) {
-                history.add(Map.of("role", msg.getRole().toLowerCase(), "content", msg.getContent()));
+                if (!"HTML".equals(msg.getMsgType())) {
+                    history.add(Map.of("role", msg.getRole().toLowerCase(), "content", msg.getContent()));
+                }
             }
         }
         history.add(Map.of("role", "user", "content", request.getMessage()));
-        return new StreamContext(history, ref.text, ref.images, sessionId, pageId);
+
+        // 직접 첨부 이미지와 파일 참고 이미지 병합
+        List<String> allImages = new ArrayList<>();
+        if (ref.images != null) allImages.addAll(ref.images);
+        if (request.getImages() != null) allImages.addAll(request.getImages());
+
+        return new StreamContext(history, ref.text, allImages.isEmpty() ? null : allImages, sessionId, pageId);
     }
 
     /** 스트리밍 완료 후 결과 저장. 신규 세션이면 sessionId 반환, 기존 페이지 수정이면 null */

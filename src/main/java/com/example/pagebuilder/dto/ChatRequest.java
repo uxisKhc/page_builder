@@ -9,6 +9,7 @@ public class ChatRequest {
     private Long pageId;             // 기존 페이지 수정 시
     private List<Long> fileIds;      // 참고할 파일 ID 목록
     private String modelId;          // 사용할 모델 ID (null이면 설정값 기본 모델)
+    private List<String> images;     // base64 이미지 목록 (직접 첨부)
 
     public String getMessage() { return message; }
     public void setMessage(String message) { this.message = message; }
@@ -24,4 +25,7 @@ public class ChatRequest {
 
     public String getModelId() { return modelId; }
     public void setModelId(String modelId) { this.modelId = modelId; }
+
+    public List<String> getImages() { return images; }
+    public void setImages(List<String> images) { this.images = images; }
 }

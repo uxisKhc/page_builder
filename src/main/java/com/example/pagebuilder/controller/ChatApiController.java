@@ -152,6 +152,7 @@ public class ChatApiController {
                 // 스트리밍 시작
                 ollamaService.streamHtml(
                     ctx.history, ctx.referenceText, ctx.images,
+                    request.getModelId(),
                     token -> {
                         try {
                             emitter.send(SseEmitter.event().name("token").data(token));

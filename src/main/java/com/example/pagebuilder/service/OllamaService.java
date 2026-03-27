@@ -251,11 +251,13 @@ public class OllamaService {
     public void streamHtml(List<Map<String, String>> chatHistory,
                             String referenceText,
                             List<String> imageBase64List,
+                            String modelId,
                             Consumer<String> onToken,
                             BiConsumer<String, Integer> onComplete) throws IOException {
 
         boolean useVision = imageBase64List != null && !imageBase64List.isEmpty();
-        String modelName = useVision ? visionModel : model;
+        String modelName = (modelId != null && !modelId.isBlank()) ? modelId
+                         : (useVision ? visionModel : model);
         String sysPrompt = useVision ? VISION_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
         ObjectNode body;
