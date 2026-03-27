@@ -58,6 +58,21 @@
         .btn-attach:hover { border-color: var(--primary); color: var(--primary); }
         .btn-hint { font-size: 0.72rem; color: #777; margin-top: 4px; }
 
+        /* 모델 선택 셀렉트 */
+        .model-select { background: #3d3d5c; border: 1px solid #555; color: #e0e0e0; border-radius: 6px; font-size: 0.75rem; padding: 3px 6px; cursor: pointer; }
+        .model-select:focus { outline: none; border-color: var(--primary); }
+
+        /* 사용량 배지 */
+        .usage-bar { display: flex; align-items: center; gap: 6px; padding: 5px 12px; background: #1e1e30; border-bottom: 1px solid #333; font-size: 0.72rem; flex-shrink: 0; }
+        .usage-badge { background: #2d2d44; border: 1px solid #444; color: #aaa; border-radius: 12px; padding: 2px 8px; }
+        .usage-badge.warn { border-color: #f59e0b; color: #f59e0b; }
+        .usage-badge.ok   { border-color: #10b981; color: #10b981; }
+
+        /* HTML 생성 버튼 */
+        .btn-generate { background: linear-gradient(135deg, #10b981, #059669); border: none; border-radius: 10px; padding: 8px 14px; color: white; font-weight: 700; font-size: 0.82rem; flex-shrink: 0; white-space: nowrap; }
+        .btn-generate:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-generate:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16,185,129,0.4); }
+
         /* 내 파일 드롭업 */
         .myfiles-panel { display: none; position: absolute; bottom: 100%; left: 12px; right: 12px; background: #2d2d44; border: 1px solid #555; border-radius: 10px; box-shadow: 0 -4px 20px rgba(0,0,0,0.4); z-index: 100; max-height: 220px; overflow-y: auto; }
         .myfiles-panel.open { display: block; }
@@ -137,15 +152,33 @@
 
     <!-- ── 채팅 패널 ── -->
     <div class="chat-panel">
-        <div class="chat-panel-header" style="display:flex; align-items:center; justify-content:space-between;">
-            <div>
+        <div class="chat-panel-header">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
                 <div class="text-white fw-bold small"><i class="fas fa-comments me-1"></i>AI 채팅</div>
-                <div class="text-muted" style="font-size:0.73rem">원하는 화면을 설명하거나 참고 파일을 첨부하세요</div>
+                <button th:if="${pageId != null}" class="btn btn-outline-secondary btn-sm" style="font-size:0.72rem; padding:3px 8px;"
+                        onclick="reloadHistory()" title="대화 내역 다시 불러오기">
+                    <i class="fas fa-sync-alt me-1"></i>내역 새로고침
+                </button>
             </div>
-            <button th:if="${pageId != null}" class="btn btn-outline-secondary btn-sm" style="font-size:0.72rem; padding:3px 8px;"
-                    onclick="reloadHistory()" title="대화 내역 다시 불러오기">
-                <i class="fas fa-sync-alt me-1"></i>내역 새로고침
-            </button>
+            <!-- 모델 선택 -->
+            <div style="display:flex; align-items:center; gap:6px;">
+                <i class="fas fa-robot text-muted" style="font-size:0.75rem;"></i>
+                <select id="modelSelect" class="model-select" onchange="onModelChange()">
+                    <optgroup label="텍스트 모델 (빠름)">
+                        <option value="llama-3.3-70b-versatile" selected>llama-3.3-70b (추천)</option>
+                        <option value="llama-3.1-8b-instant">llama-3.1-8b (매우 빠름)</option>
+                        <option value="gemma2-9b-it">gemma2-9b</option>
+                        <option value="mixtral-8x7b-32768">mixtral-8x7b (장문)</option>
+                    </optgroup>
+                    <optgroup label="비전 모델 (이미지 분석)">
+                        <option value="meta-llama/llama-4-scout-17b-16e-instruct">llama-4-scout (비전)</option>
+                        <option value="meta-llama/llama-4-maverick-17b-128e-instruct">llama-4-maverick (비전)</option>
+                    </optgroup>
+                </select>
+                <span id="usageBadge" class="usage-badge" title="클릭하여 새로고침" onclick="loadUsage()" style="cursor:pointer;">
+                    <i class="fas fa-chart-bar me-1"></i>사용량 로드 중...
+                </span>
+            </div>
         </div>
 
         <!-- 메시지 목록 -->
@@ -160,7 +193,7 @@
             <div class="text-muted mb-1" style="font-size:0.73rem">
                 <i class="fas fa-paperclip me-1"></i>첨부 파일
                 <span class="text-warning ms-1" id="visionNote" style="display:none">
-                    <i class="fas fa-eye me-1"></i>이미지 포함 — llava 비전 모델 사용
+                    <i class="fas fa-eye me-1"></i>이미지 포함 — 비전 모델로 자동 전환
                 </span>
             </div>
             <div id="chipContainer"></div>
@@ -196,17 +229,21 @@
                 </button>
 
                 <textarea id="chatInput" rows="3" class="form-control"
-                          placeholder="예: 로그인 페이지 만들어줘&#10;또는 이미지/PPT를 첨부 후 전송"
+                          placeholder="원하는 페이지를 설명하세요. AI가 요구사항을 정리해줍니다.&#10;Enter = 대화 전송 / Shift+Enter = 줄바꿈"
                           onkeydown="handleKey(event)"></textarea>
 
-                <button class="btn-send" id="btnSend" onclick="sendMessage()">
+                <button class="btn-send" id="btnSend" onclick="sendChat()" title="대화 전송 (Enter)">
                     <i class="fas fa-paper-plane"></i>
                 </button>
             </div>
-            <div class="btn-hint">
+            <!-- HTML 생성 버튼 -->
+            <button class="btn-generate w-100 mt-2" id="btnGenerate" onclick="generateHtmlPage()">
+                <i class="fas fa-magic me-2"></i>HTML 생성
+            </button>
+            <div class="btn-hint mt-1">
                 <i class="fas fa-lightbulb me-1 text-warning"></i>
-                <strong>이미지</strong> 첨부 시 화면 레이아웃을 그대로 재현합니다.
-                PPT 슬라이드는 <strong>스크린샷(PNG)</strong>으로 저장 후 첨부하세요.
+                대화로 요구사항 정리 후 <strong>HTML 생성</strong> 버튼을 누르세요.
+                <strong>이미지</strong> 첨부 시 비전 모델로 자동 전환됩니다.
             </div>
         </div>
     </div>
@@ -747,57 +784,183 @@
     }
 
     // ─────────────────────────────────────────
-    // 채팅 & 스트리밍 생성
+    // 모델 선택 & 사용량
     // ─────────────────────────────────────────
-    function handleKey(e) {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    let selectedModel = 'llama-3.3-70b-versatile';
+
+    function onModelChange() {
+        selectedModel = document.getElementById('modelSelect').value;
     }
 
-    async function sendMessage() {
+    async function loadUsage() {
+        const badge = document.getElementById('usageBadge');
+        try {
+            const res  = await fetch('/api/chat/groq-usage');
+            const data = await res.json();
+            const models = Object.keys(data);
+            if (models.length === 0) {
+                badge.textContent = '사용량 없음 (아직 요청 전)';
+                badge.className = 'usage-badge';
+                return;
+            }
+            // 현재 선택 모델 기준, 없으면 첫 번째
+            const key = models.includes(selectedModel) ? selectedModel : models[0];
+            const limits = data[key];
+            const rem  = limits['x-ratelimit-remaining-requests'] || '?';
+            const tot  = limits['x-ratelimit-limit-requests'] || '?';
+            const remT = limits['x-ratelimit-remaining-tokens'] || '?';
+            const reset= limits['x-ratelimit-reset-requests'] || '';
+            badge.innerHTML = `<i class="fas fa-chart-bar me-1"></i>요청 ${rem}/${tot} · 토큰 ${Number(remT).toLocaleString()} 남음`;
+            badge.className = 'usage-badge ' + (parseInt(rem) < 5 ? 'warn' : 'ok');
+            badge.title = `리셋: ${reset} · 모델: ${key}`;
+        } catch (e) {
+            badge.textContent = '사용량 조회 실패';
+            badge.className = 'usage-badge';
+        }
+    }
+
+    // 페이지 로드 시 사용량 조회
+    loadUsage();
+
+    // ─────────────────────────────────────────
+    // 채팅 (대화형) & HTML 생성
+    // ─────────────────────────────────────────
+    function handleKey(e) {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+    }
+
+    // ── 대화 전송 (텍스트 응답) ──
+    async function sendChat() {
         const input = document.getElementById('chatInput');
         const msg   = input.value.trim();
         if (!msg && attachments.length === 0) return;
 
-        const displayMsg     = msg || '(첨부 파일을 참고하여 페이지를 만들어주세요)';
+        const displayMsg      = msg || '(첨부 파일 참고)';
         const sentAttachments = [...attachments];
 
         addUserMsgWithAttachments(displayMsg, sentAttachments);
         input.value = '';
-
-        const hasVision = sentAttachments.some(a => a.type === 'IMAGE');
-        setLoading(true, hasVision);
-
-        // 기존 버전 저장 (수정 시 비교용)
-        if (PAGE_ID && currentHtml) previousHtml = currentHtml;
-
-        const payload = {
-            message:   displayMsg,
-            sessionId: sessionId,
-            pageId:    PAGE_ID,
-            fileIds:   sentAttachments.map(a => a.id)
-        };
-
         attachments = [];
         renderTray();
 
+        setBusy(true);
+        const payload = {
+            message: displayMsg, sessionId, pageId: PAGE_ID,
+            fileIds: sentAttachments.map(a => a.id),
+            modelId: selectedModel
+        };
+
+        try {
+            const res = await fetch('/api/chat/talk', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) { addSystemMsg('❌ 서버 오류: ' + res.status); return; }
+            await readTalkStream(res);
+        } catch (e) {
+            addSystemMsg('❌ 연결 오류: ' + e.message);
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    // ── HTML 생성 ──
+    async function generateHtmlPage() {
+        const input = document.getElementById('chatInput');
+        const msg   = input.value.trim();
+        const sentAttachments = [...attachments];
+
+        // 입력이 있으면 사용자 메시지로 표시
+        if (msg) {
+            addUserMsgWithAttachments(msg, sentAttachments);
+            input.value = '';
+            attachments = [];
+            renderTray();
+        }
+
+        const hasVision = sentAttachments.some(a => a.type === 'IMAGE');
+        const genModel  = hasVision
+            ? document.getElementById('modelSelect').selectedOptions[0]
+                .closest('optgroup[label*="비전"]') ? selectedModel
+                : 'meta-llama/llama-4-scout-17b-16e-instruct'
+            : selectedModel;
+
+        setLoading(true, hasVision);
+        if (PAGE_ID && currentHtml) previousHtml = currentHtml;
+
+        const payload = {
+            message:   msg || '지금까지 대화한 내용을 바탕으로 HTML 페이지를 생성해주세요.',
+            sessionId, pageId: PAGE_ID,
+            fileIds: sentAttachments.map(a => a.id),
+            modelId: genModel
+        };
+
         try {
             const res = await fetch('/api/chat/stream', {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify(payload)
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             });
-
-            if (!res.ok) {
-                addSystemMsg('❌ 서버 오류: ' + res.status);
-                return;
-            }
-
+            if (!res.ok) { addSystemMsg('❌ 서버 오류: ' + res.status); return; }
             await readSseStream(res, sentAttachments);
-
         } catch (e) {
             addSystemMsg('❌ 서버 연결 오류: ' + e.message);
         } finally {
             setLoading(false);
+            loadUsage();
+        }
+    }
+
+    // ── 대화 SSE 스트림 읽기 ──
+    async function readTalkStream(res) {
+        const reader  = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '', currentEvent = '', accText = '';
+        let aiDiv = null;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (line.startsWith('event:')) {
+                    currentEvent = line.slice(6).trim();
+                } else if (line.startsWith('data:')) {
+                    const data = line.slice(5).trim();
+                    if (currentEvent === 'token') {
+                        accText += data;
+                        if (!aiDiv) {
+                            aiDiv = document.createElement('div');
+                            aiDiv.className = 'msg-ai';
+                            aiDiv.style.whiteSpace = 'pre-wrap';
+                            document.getElementById('chatMessages').appendChild(aiDiv);
+                        }
+                        aiDiv.textContent = accText;
+                        document.getElementById('chatMessages').scrollTop = 9999;
+                    } else if (currentEvent === 'complete') {
+                        try {
+                            const result = JSON.parse(data);
+                            if (result.sessionId) {
+                                sessionId = result.sessionId;
+                                if (!PAGE_ID) history.replaceState({}, '', `?s=${encodeURIComponent(result.sessionId)}`);
+                            }
+                            if (aiDiv) {
+                                const time = document.createElement('div');
+                                time.className = 'msg-time';
+                                time.textContent = nowTime();
+                                aiDiv.appendChild(time);
+                            }
+                            loadUsage();
+                        } catch (ignored) {}
+                    } else if (currentEvent === 'error') {
+                        addSystemMsg('❌ AI 오류: ' + data);
+                    }
+                } else if (line === '') {
+                    currentEvent = '';
+                }
+            }
         }
     }
 
@@ -898,9 +1061,16 @@
     // ─────────────────────────────────────────
     // 로딩 상태 & 타이머
     // ─────────────────────────────────────────
+    /** 대화 전송 중 버튼 비활성화 (로딩 오버레이 없이) */
+    function setBusy(on) {
+        document.getElementById('btnSend').disabled     = on;
+        document.getElementById('btnGenerate').disabled = on;
+    }
+
     function setLoading(on, isVision) {
         document.getElementById('loadingOverlay').classList.toggle('active', on);
-        document.getElementById('btnSend').disabled = on;
+        document.getElementById('btnSend').disabled     = on;
+        document.getElementById('btnGenerate').disabled = on;
 
         if (on) {
             tokenCounter    = 0;

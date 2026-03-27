@@ -91,15 +91,28 @@ public class PageService {
                     .orElseThrow(() -> new IllegalArgumentException("페이지를 찾을 수 없습니다."));
             page.setHtmlContent(generatedHtml);
             pageRepository.save(page);
-            saveMessage(null, page, "user", userMsg, null, null, null);
-            saveMessage(null, page, "assistant", generatedHtml, modelName, elapsedMs, tokenCount);
+            saveMessage(null, page, "user", userMsg, "TEXT", null, null, null);
+            saveMessage(null, page, "assistant", generatedHtml, "HTML", modelName, elapsedMs, tokenCount);
             log.info("채팅 메시지 저장 완료 — pageId={}, model={}, elapsed={}ms, tokens={}", ctx.pageId, modelName, elapsedMs, tokenCount);
             return null;
         } else {
-            saveMessage(ctx.sessionId, null, "user", userMsg, null, null, null);
-            saveMessage(ctx.sessionId, null, "assistant", generatedHtml, modelName, elapsedMs, tokenCount);
+            saveMessage(ctx.sessionId, null, "user", userMsg, "TEXT", null, null, null);
+            saveMessage(ctx.sessionId, null, "assistant", generatedHtml, "HTML", modelName, elapsedMs, tokenCount);
             log.info("채팅 메시지 저장 완료 — sessionId={}, model={}, elapsed={}ms, tokens={}", ctx.sessionId, modelName, elapsedMs, tokenCount);
             return ctx.sessionId;
+        }
+    }
+
+    /** 대화형 텍스트 메시지 저장 (HTML 생성 아님) */
+    public void saveTextMessage(StreamContext ctx, String userMsg, String aiText, Member member, String modelName) {
+        if (ctx.pageId != null) {
+            HtmlPage page = pageRepository.findByIdAndMember(ctx.pageId, member)
+                    .orElseThrow(() -> new IllegalArgumentException("페이지를 찾을 수 없습니다."));
+            saveMessage(null, page, "user", userMsg, "TEXT", null, null, null);
+            saveMessage(null, page, "assistant", aiText, "TEXT", modelName, null, null);
+        } else {
+            saveMessage(ctx.sessionId, null, "user", userMsg, "TEXT", null, null, null);
+            saveMessage(ctx.sessionId, null, "assistant", aiText, "TEXT", modelName, null, null);
         }
     }
 
@@ -132,8 +145,8 @@ public class PageService {
                 String generatedHtml = ollamaService.generateHtml(history, ref.text, ref.images);
                 page.setHtmlContent(generatedHtml);
                 pageRepository.save(page);
-                saveMessage(null, page, "user", request.getMessage(), null, null, null);
-                saveMessage(null, page, "assistant", generatedHtml, null, null, null);
+                saveMessage(null, page, "user", request.getMessage(), "TEXT", null, null, null);
+                saveMessage(null, page, "assistant", generatedHtml, "HTML", null, null, null);
 
                 return ChatResponse.ok("페이지가 수정되었습니다.", generatedHtml, null);
 
@@ -153,8 +166,8 @@ public class PageService {
                 history.add(Map.of("role", "user", "content", request.getMessage()));
 
                 String generatedHtml = ollamaService.generateHtml(history, ref.text, ref.images);
-                saveMessage(sessionId, null, "user", request.getMessage(), null, null, null);
-                saveMessage(sessionId, null, "assistant", generatedHtml, null, null, null);
+                saveMessage(sessionId, null, "user", request.getMessage(), "TEXT", null, null, null);
+                saveMessage(sessionId, null, "assistant", generatedHtml, "HTML", null, null, null);
 
                 return ChatResponse.ok("페이지가 생성되었습니다.", generatedHtml, sessionId);
             }
@@ -262,7 +275,7 @@ public class PageService {
         List<Map<String, Object>> versions = new ArrayList<>();
         int vNum = 0;
         for (ChatMessage msg : all) {
-            if ("assistant".equalsIgnoreCase(msg.getRole())) {
+            if ("assistant".equalsIgnoreCase(msg.getRole()) && !"TEXT".equals(msg.getMsgType())) {
                 vNum++;
                 Map<String, Object> v = new HashMap<>();
                 v.put("id",         msg.getId());
@@ -313,12 +326,13 @@ public class PageService {
     }
 
     private void saveMessage(String sessionId, HtmlPage page, String role, String content,
-                              String modelName, Long elapsedMs, Integer tokenCount) {
+                              String msgType, String modelName, Long elapsedMs, Integer tokenCount) {
         ChatMessage msg = new ChatMessage();
         msg.setSessionId(sessionId);
         msg.setHtmlPage(page);
         msg.setRole(role);
         msg.setContent(content);
+        msg.setMsgType(msgType);
         msg.setModelName(modelName);
         msg.setElapsedMs(elapsedMs);
         msg.setTokenCount(tokenCount);

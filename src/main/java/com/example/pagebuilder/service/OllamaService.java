@@ -7,16 +7,14 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
@@ -27,19 +25,24 @@ public class OllamaService {
 
     private static final Logger log = LoggerFactory.getLogger(OllamaService.class);
 
-    @Value("${ollama.base-url}")
-    private String baseUrl;
+    @Value("${groq.api-key}")
+    private String apiKey;
 
-    @Value("${ollama.model}")
+    @Value("${groq.model:llama-3.3-70b-versatile}")
     private String model;
 
-    @Value("${ollama.vision-model:llava}")
+    @Value("${groq.vision-model:meta-llama/llama-4-scout-17b-16e-instruct}")
     private String visionModel;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    @Value("${groq.base-url:https://api.groq.com/openai/v1}")
+    private String baseUrl;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // HTML 생성 시작 지점 (pre-fill — 모델이 이어서 쓰도록 강제)
+    // 마지막 API 응답의 Rate limit 헤더 (모델별)
+    private final Map<String, Map<String, String>> rateLimitCache = new ConcurrentHashMap<>();
+
+    // HTML 생성 시작 지점 (pre-fill)
     static final String PREFILL = "<!DOCTYPE html>\n<html lang=\"ko\">\n<head>\n<meta charset=\"UTF-8\">";
 
     // ─────────────────────────────────────────
@@ -115,13 +118,111 @@ public class OllamaService {
         "Use realistic Korean sample data. Add hover effects.\n" +
         "Language: Korean unless image shows specific text.";
 
+    // 대화형 요구사항 수집 프롬프트
+    private static final String CHAT_SYSTEM_PROMPT =
+        "당신은 웹 페이지 기획을 도와주는 친절한 AI 컨설턴트입니다.\n" +
+        "사용자와 대화를 통해 만들고 싶은 웹 페이지의 요구사항을 파악하세요.\n\n" +
+        "== 파악할 내용 ==\n" +
+        "1. 페이지 종류 (대시보드, 랜딩 페이지, 로그인, 목록, 폼 등)\n" +
+        "2. 주요 기능과 포함할 섹션\n" +
+        "3. 색상/스타일 선호도 (밝은/어두운, 색상 테마)\n" +
+        "4. 표시할 데이터나 콘텐츠\n" +
+        "5. 대상 사용자\n\n" +
+        "== 규칙 ==\n" +
+        "- 한 번에 한 가지 질문만 하세요.\n" +
+        "- 답변은 3~5줄 이내로 간결하게 하세요.\n" +
+        "- HTML 코드를 절대 출력하지 마세요.\n" +
+        "- 요구사항이 충분히 파악되면 (보통 2~3번 대화 후) 마지막에 반드시 이 문구를 포함하세요:\n" +
+        "  '✅ 요구사항 정리 완료! [HTML 생성] 버튼을 눌러 페이지를 만들어보세요.'\n" +
+        "- 항상 한국어로 답변하세요.";
+
     // ─────────────────────────────────────────
     // Public API
     // ─────────────────────────────────────────
 
-    /** 사용할 모델 이름 반환 */
+    /** 사용할 모델 이름 반환 (modelId 우선, 없으면 설정값) */
     public String getModelName(boolean useVision) {
         return useVision ? visionModel : model;
+    }
+
+    public String getModelName(boolean useVision, String modelId) {
+        if (modelId != null && !modelId.isBlank()) return modelId;
+        return getModelName(useVision);
+    }
+
+    /** Rate limit 정보 반환 */
+    public Map<String, Map<String, String>> getRateLimits() {
+        return Collections.unmodifiableMap(rateLimitCache);
+    }
+
+    /**
+     * 대화형 텍스트 스트리밍 — HTML 생성 없이 요구사항 수집 대화
+     */
+    public void streamText(List<Map<String, String>> chatHistory,
+                           String modelId,
+                           Consumer<String> onToken,
+                           BiConsumer<String, Integer> onComplete) throws IOException {
+        String modelName = (modelId != null && !modelId.isBlank()) ? modelId : model;
+
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("model", modelName);
+        body.put("stream", true);
+        body.put("temperature", 0.7);
+        body.put("max_tokens", 1024);
+
+        ArrayNode messages = objectMapper.createArrayNode();
+
+        // 시스템 프롬프트
+        ObjectNode sysMsg = objectMapper.createObjectNode();
+        sysMsg.put("role", "system");
+        sysMsg.put("content", CHAT_SYSTEM_PROMPT);
+        messages.add(sysMsg);
+
+        // 전체 히스토리
+        for (Map<String, String> msg : chatHistory) {
+            ObjectNode node = objectMapper.createObjectNode();
+            node.put("role", msg.get("role"));
+            node.put("content", msg.get("content"));
+            messages.add(node);
+        }
+        body.set("messages", messages);
+
+        URL url = new URL(baseUrl + "/chat/completions");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+        conn.setConnectTimeout(15_000);
+        conn.setReadTimeout(60_000);
+
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+        }
+
+        StringBuilder accumulated = new StringBuilder();
+        int tokenCount = 0;
+
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            captureRateLimits(conn, modelName);
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.isBlank() || !line.startsWith("data: ")) continue;
+                String data = line.substring(6).trim();
+                if ("[DONE]".equals(data)) break;
+                try {
+                    JsonNode chunk = objectMapper.readTree(data);
+                    String token = chunk.path("choices").path(0).path("delta").path("content").asText();
+                    if (!token.isEmpty()) {
+                        accumulated.append(token);
+                        tokenCount++;
+                        onToken.accept(token);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+        onComplete.accept(accumulated.toString(), tokenCount);
     }
 
     /** 동기 방식 (기존 호환) */
@@ -133,20 +234,13 @@ public class OllamaService {
         String sysPrompt = useVision ? VISION_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
         try {
-            ObjectNode body = buildMessagesJson(modelName, sysPrompt, chatHistory, referenceText, imageBase64List);
-            body.put("stream", false);
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            HttpEntity<String> entity = new HttpEntity<>(body.toString(), headers);
-
-            ResponseEntity<String> response = restTemplate.postForEntity(baseUrl + "/api/chat", entity, String.class);
-            JsonNode root = objectMapper.readTree(response.getBody());
-            String content = PREFILL + root.path("message").path("content").asText();
-            return extractHtml(content);
-
+            ObjectNode body = buildRequestJson(modelName, sysPrompt, chatHistory, referenceText, imageBase64List, false);
+            String responseStr = sendRequest(body.toString());
+            JsonNode root = objectMapper.readTree(responseStr);
+            String content = root.path("choices").path(0).path("message").path("content").asText();
+            return extractHtml(PREFILL + content);
         } catch (Exception e) {
-            log.error("동기 Ollama 호출 실패", e);
+            log.error("Groq 동기 호출 실패", e);
             throw new RuntimeException("AI 서버 오류: " + e.getMessage());
         }
     }
@@ -166,23 +260,22 @@ public class OllamaService {
 
         ObjectNode body;
         try {
-            body = buildMessagesJson(modelName, sysPrompt, chatHistory, referenceText, imageBase64List);
+            body = buildRequestJson(modelName, sysPrompt, chatHistory, referenceText, imageBase64List, true);
         } catch (Exception e) {
             throw new IOException("요청 생성 실패: " + e.getMessage(), e);
         }
-        body.put("stream", true);
-        String requestStr = body.toString();
 
-        URL url = new URL(baseUrl + "/api/chat");
+        URL url = new URL(baseUrl + "/chat/completions");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setDoOutput(true);
         conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("Authorization", "Bearer " + apiKey);
         conn.setConnectTimeout(15_000);
-        conn.setReadTimeout(0); // 무제한 — 스트리밍 생성 중 중단 방지 (10분 이상 걸릴 수 있음)
+        conn.setReadTimeout(0); // 무제한
 
         try (OutputStream os = conn.getOutputStream()) {
-            os.write(requestStr.getBytes(StandardCharsets.UTF_8));
+            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
         }
 
         StringBuilder accumulated = new StringBuilder(PREFILL);
@@ -190,20 +283,21 @@ public class OllamaService {
 
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            captureRateLimits(conn, modelName);
             String line;
             while ((line = reader.readLine()) != null) {
-                if (line.isBlank()) continue;
+                if (line.isBlank() || !line.startsWith("data: ")) continue;
+                String data = line.substring(6).trim();
+                if ("[DONE]".equals(data)) break;
                 try {
-                    JsonNode chunk = objectMapper.readTree(line);
-                    String token = chunk.path("message").path("content").asText();
-                    boolean done = chunk.path("done").asBoolean();
+                    JsonNode chunk = objectMapper.readTree(data);
+                    String token = chunk.path("choices").path(0).path("delta").path("content").asText();
                     if (!token.isEmpty()) {
                         accumulated.append(token);
                         tokenCount++;
                         onToken.accept(token);
                     }
-                    if (done) break;
-                } catch (Exception ignored) { /* 파싱 실패 라인 건너뜀 */ }
+                } catch (Exception ignored) {}
             }
         }
 
@@ -211,15 +305,57 @@ public class OllamaService {
     }
 
     // ─────────────────────────────────────────
-    // 공통: 메시지 JSON 빌더
+    // 내부 유틸
     // ─────────────────────────────────────────
 
-    private ObjectNode buildMessagesJson(String modelName, String sysPrompt,
-                                          List<Map<String, String>> chatHistory,
-                                          String referenceText,
-                                          List<String> imageBase64List) {
+    /** Groq 응답 헤더에서 Rate limit 정보 캡처 */
+    private void captureRateLimits(HttpURLConnection conn, String modelName) {
+        Map<String, String> limits = new HashMap<>();
+        List<String> keys = List.of(
+            "x-ratelimit-limit-requests", "x-ratelimit-remaining-requests",
+            "x-ratelimit-limit-tokens",   "x-ratelimit-remaining-tokens",
+            "x-ratelimit-reset-requests", "x-ratelimit-reset-tokens"
+        );
+        for (String key : keys) {
+            String val = conn.getHeaderField(key);
+            if (val != null) limits.put(key, val);
+        }
+        if (!limits.isEmpty()) rateLimitCache.put(modelName, limits);
+    }
+
+    private String sendRequest(String requestBody) throws IOException {
+        URL url = new URL(baseUrl + "/chat/completions");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+        conn.setConnectTimeout(15_000);
+        conn.setReadTimeout(60_000);
+
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(requestBody.getBytes(StandardCharsets.UTF_8));
+        }
+
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) sb.append(line);
+        }
+        return sb.toString();
+    }
+
+    private ObjectNode buildRequestJson(String modelName, String sysPrompt,
+                                        List<Map<String, String>> chatHistory,
+                                        String referenceText,
+                                        List<String> imageBase64List,
+                                        boolean stream) {
         ObjectNode requestBody = objectMapper.createObjectNode();
         requestBody.put("model", modelName);
+        requestBody.put("stream", stream);
+        requestBody.put("temperature", 0.7);
+        requestBody.put("max_tokens", 8192);
 
         ArrayNode messages = objectMapper.createArrayNode();
 
@@ -247,20 +383,38 @@ public class OllamaService {
             Map<String, String> last = chatHistory.get(chatHistory.size() - 1);
             ObjectNode lastNode = objectMapper.createObjectNode();
             lastNode.put("role", last.get("role"));
-            lastNode.put("content", last.get("content") +
+
+            String userText = last.get("content") +
                 "\n\n[IMPORTANT: Output ONLY complete HTML code. " +
                 "Start immediately with <!DOCTYPE html>. " +
-                "Do NOT ask questions. Do NOT explain. Just output the HTML.]");
+                "Do NOT ask questions. Do NOT explain. Just output the HTML.]";
 
-            if (imageBase64List != null && !imageBase64List.isEmpty()) {
-                ArrayNode imagesNode = objectMapper.createArrayNode();
-                for (String b64 : imageBase64List) imagesNode.add(b64);
-                lastNode.set("images", imagesNode);
+            boolean hasImages = imageBase64List != null && !imageBase64List.isEmpty();
+            if (hasImages) {
+                // 비전: content를 배열 형태로 (OpenAI vision 형식)
+                ArrayNode contentArr = objectMapper.createArrayNode();
+
+                ObjectNode textPart = objectMapper.createObjectNode();
+                textPart.put("type", "text");
+                textPart.put("text", userText);
+                contentArr.add(textPart);
+
+                for (String b64 : imageBase64List) {
+                    ObjectNode imgPart = objectMapper.createObjectNode();
+                    imgPart.put("type", "image_url");
+                    ObjectNode imgUrl = objectMapper.createObjectNode();
+                    imgUrl.put("url", "data:" + detectMimeType(b64) + ";base64," + b64);
+                    imgPart.set("image_url", imgUrl);
+                    contentArr.add(imgPart);
+                }
+                lastNode.set("content", contentArr);
+            } else {
+                lastNode.put("content", userText);
             }
             messages.add(lastNode);
         }
 
-        // Pre-fill: 모델이 HTML부터 이어서 생성하도록 강제
+        // Pre-fill: 모델이 HTML부터 이어서 생성하도록 유도
         ObjectNode prefill = objectMapper.createObjectNode();
         prefill.put("role", "assistant");
         prefill.put("content", PREFILL);
@@ -268,6 +422,15 @@ public class OllamaService {
 
         requestBody.set("messages", messages);
         return requestBody;
+    }
+
+    /** base64 앞부분으로 이미지 MIME 타입 감지 */
+    private String detectMimeType(String base64) {
+        if (base64.startsWith("/9j/"))   return "image/jpeg";
+        if (base64.startsWith("iVBOR")) return "image/png";
+        if (base64.startsWith("R0lGOD")) return "image/gif";
+        if (base64.startsWith("UklGR")) return "image/webp";
+        return "image/png"; // 기본값
     }
 
     // ─────────────────────────────────────────

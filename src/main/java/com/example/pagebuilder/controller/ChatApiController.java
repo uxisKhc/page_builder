@@ -13,7 +13,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,6 +30,81 @@ public class ChatApiController {
 
     private static final ExecutorService streamExecutor = Executors.newCachedThreadPool();
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /**
+     * 대화형 텍스트 스트리밍 — 요구사항 수집 (HTML 생성 없음)
+     * POST /api/chat/talk
+     */
+    @PostMapping("/talk")
+    public SseEmitter talk(@RequestBody ChatRequest request, Authentication auth) {
+        Member member = memberService.findByUsername(auth.getName());
+        SseEmitter emitter = new SseEmitter(0L);
+
+        streamExecutor.execute(() -> {
+            try {
+                PageService.StreamContext ctx = pageService.buildStreamContext(request, member);
+                String modelId = request.getModelId();
+                String modelName = ollamaService.getModelName(false, modelId);
+
+                emitter.send(SseEmitter.event().name("status")
+                        .data("AI가 답변을 준비하고 있습니다... (모델: " + modelName + ")"));
+
+                StringBuilder fullText = new StringBuilder();
+
+                // 히스토리에서 마지막 user 메시지는 이미 포함됨 — 그대로 전달
+                List<Map<String, String>> history = new ArrayList<>(ctx.history);
+
+                ollamaService.streamText(
+                    history,
+                    modelId,
+                    token -> {
+                        try {
+                            fullText.append(token);
+                            emitter.send(SseEmitter.event().name("token").data(token));
+                        } catch (Exception ignored) {}
+                    },
+                    (text, tokenCount) -> {
+                        try {
+                            long elapsed = 0;
+                            pageService.saveTextMessage(ctx, request.getMessage(), text, member, modelName);
+
+                            Map<String, Object> payload = new HashMap<>();
+                            payload.put("text", text);
+                            payload.put("tokenCount", tokenCount);
+                            payload.put("modelName", modelName);
+                            payload.put("sessionId",
+                                ctx.sessionId != null ? ctx.sessionId : "");
+
+                            emitter.send(SseEmitter.event().name("complete")
+                                    .data(objectMapper.writeValueAsString(payload)));
+                            emitter.complete();
+                        } catch (Exception e) {
+                            try {
+                                emitter.send(SseEmitter.event().name("error").data(e.getMessage()));
+                                emitter.complete();
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                );
+            } catch (Exception e) {
+                try {
+                    emitter.send(SseEmitter.event().name("error").data(e.getMessage()));
+                    emitter.complete();
+                } catch (Exception ignored) {}
+            }
+        });
+
+        return emitter;
+    }
+
+    /**
+     * Groq Rate limit 사용량 조회
+     * GET /api/groq/usage
+     */
+    @GetMapping("/groq-usage")
+    public ResponseEntity<Map<String, Map<String, String>>> groqUsage() {
+        return ResponseEntity.ok(ollamaService.getRateLimits());
+    }
 
     /**
      * 채팅으로 HTML 생성 (동기 방식 — 기존 호환)
@@ -63,7 +140,7 @@ public class ChatApiController {
                 // 히스토리·참고자료 준비 (트랜잭션 내)
                 PageService.StreamContext ctx = pageService.buildStreamContext(request, member);
                 boolean useVision = ctx.images != null && !ctx.images.isEmpty();
-                String modelName = ollamaService.getModelName(useVision);
+                String modelName = ollamaService.getModelName(useVision, request.getModelId());
 
                 // 상태 메시지 전송
                 emitter.send(SseEmitter.event().name("status").data(

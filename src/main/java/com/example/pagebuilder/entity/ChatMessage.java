@@ -27,6 +27,10 @@ public class ChatMessage {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    // TEXT: 대화형 텍스트 응답 / HTML: HTML 생성 결과 (null이면 HTML로 간주)
+    @Column(name = "msg_type", length = 10)
+    private String msgType;
+
     // 어시스턴트 메시지 메타데이터 (생성 정보)
     @Column(name = "model_name", length = 100)
     private String modelName;
@@ -56,6 +60,9 @@ public class ChatMessage {
 
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
+
+    public String getMsgType() { return msgType; }
+    public void setMsgType(String msgType) { this.msgType = msgType; }
 
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }

@@ -28,12 +28,12 @@ spring:
       max-file-size: 50MB
       max-request-size: 50MB
 
-# Ollama 설정
-ollama:
-  base-url: http://localhost:11434
-  model: codellama          # HTML/CSS 코드 생성에 최적화
-  vision-model: llava       # 이미지 분석용 (ollama pull llava 필요)
-  timeout: 120000
+# Groq API 설정 (https://console.groq.com 에서 무료 발급)
+groq:
+  api-key: ${GROQ_API_KEY:your-api-key-here}
+  base-url: https://api.groq.com/openai/v1
+  model: llama-3.3-70b-versatile          # 텍스트 HTML 생성
+  vision-model: meta-llama/llama-4-scout-17b-16e-instruct  # 이미지 분석
 
 logging:
   level:
