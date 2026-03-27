@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${pageTitle ?: 'Page Builder'}">Page</title>
+</head>
+<body>
+
+<!-- 에러 표시 -->
+<div th:if="${error}" style="font-family:sans-serif;text-align:center;padding:80px 20px;color:#666;">
+    <h2>404</h2>
+    <p th:text="${error}">페이지를 찾을 수 없습니다.</p>
+    <a href="/" style="color:#667eea;">홈으로 돌아가기</a>
+</div>
+
+<!-- 생성된 HTML을 그대로 렌더링 -->
+<div th:if="${htmlContent}" th:utext="${htmlContent}"></div>
+
+</body>
+</html>

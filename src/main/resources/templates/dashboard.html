@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>대시보드 — Page Builder</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root { --primary: #667eea; --secondary: #764ba2; }
+        body { background: #f8f9fa; }
+        .navbar { background: linear-gradient(135deg, var(--primary), var(--secondary)) !important; }
+        .page-card { border: none; border-radius: 12px; box-shadow: 0 2px 15px rgba(0,0,0,0.08); transition: transform 0.2s, box-shadow 0.2s; overflow: hidden; }
+        .page-card:hover { transform: translateY(-4px); box-shadow: 0 8px 30px rgba(0,0,0,0.15); }
+        .page-preview { width: 100%; height: 160px; border: none; pointer-events: none; transform: scale(0.5); transform-origin: top left; width: 200%; height: 320px; }
+        .preview-container { height: 160px; overflow: hidden; position: relative; background: #fff; border-bottom: 1px solid #eee; }
+        .page-card .card-body { padding: 12px 16px; }
+        .file-card { border: none; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+        .btn-new { background: linear-gradient(135deg, var(--primary), var(--secondary)); border: none; border-radius: 10px; }
+        .section-title { font-weight: 700; color: #333; border-left: 4px solid var(--primary); padding-left: 12px; }
+        .badge-excel { background: #217346; }
+        .badge-ppt { background: #d24726; }
+        .empty-state { text-align: center; padding: 60px 20px; color: #aaa; }
+        .empty-state i { font-size: 4rem; margin-bottom: 16px; }
+        .url-badge { font-size: 0.72rem; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<!-- 네비게이션 -->
+<nav class="navbar navbar-dark py-2 px-4">
+    <a class="navbar-brand fw-bold" href="/dashboard">
+        <i class="fas fa-magic me-2"></i>Page Builder
+    </a>
+    <div class="d-flex align-items-center gap-3">
+        <span class="text-white opacity-75"><i class="fas fa-user me-1"></i><span th:text="${username}"></span></span>
+        <a href="/editor" class="btn btn-light btn-sm fw-bold"><i class="fas fa-plus me-1"></i>새 페이지</a>
+        <a href="/docs" class="btn btn-outline-light btn-sm"><i class="fas fa-book me-1"></i>문서</a>
+        <a href="/logout" class="btn btn-outline-light btn-sm">로그아웃</a>
+    </div>
+</nav>
+
+<div class="container-fluid px-4 py-4">
+
+    <!-- 파일 안내 배너 -->
+    <div class="row mb-4" th:if="${!#lists.isEmpty(files)}">
+        <div class="col-12">
+            <div class="card file-card p-3" style="border-left: 4px solid var(--primary);">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <div>
+                        <div class="fw-bold mb-1"><i class="fas fa-paperclip me-2 text-primary"></i>업로드된 참고 파일 (<span th:text="${#lists.size(files)}"></span>개)</div>
+                        <div class="text-muted small">파일은 에디터에서 📎 버튼으로 첨부하여 페이지 생성에 활용하세요.</div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <span th:each="file : ${files}"
+                              class="badge rounded-pill py-2 px-3"
+                              th:classappend="${file.fileType == 'EXCEL' ? ' bg-success' : file.fileType == 'IMAGE' ? ' bg-primary' : ' bg-danger'}"
+                              th:title="${file.extractedTextPreview}">
+                            <i th:class="${file.fileType == 'EXCEL' ? 'fas fa-file-excel' : file.fileType == 'IMAGE' ? 'fas fa-image' : 'fas fa-file-powerpoint'}"></i>
+                            <span th:text="${file.originalFilename}" class="ms-1"></span>
+                            <span class="ms-2" style="cursor:pointer;opacity:0.7"
+                                  th:onclick="'deleteFile(' + ${file.id} + ')'">✕</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 내 페이지 목록 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="section-title mb-0"><i class="fas fa-th-large me-2"></i>내 페이지 (<span th:text="${#lists.size(pages)}"></span>)</h5>
+                <a href="/editor" class="btn btn-new text-white px-4 py-2 fw-bold">
+                    <i class="fas fa-plus me-2"></i>새 페이지 만들기
+                </a>
+            </div>
+
+            <div th:if="${#lists.isEmpty(pages)}" class="empty-state">
+                <i class="fas fa-magic d-block" style="color:#ddd"></i>
+                <h5 class="text-muted">아직 만든 페이지가 없어요</h5>
+                <p class="text-muted">채팅으로 원하는 화면을 설명하면 AI가 HTML 페이지를 만들어 드려요!</p>
+                <a href="/editor" class="btn btn-new text-white px-4 py-2 fw-bold mt-2">
+                    <i class="fas fa-plus me-2"></i>첫 페이지 만들기
+                </a>
+            </div>
+
+            <div class="row g-3" th:if="${!#lists.isEmpty(pages)}">
+                <div class="col-md-4 col-lg-3" th:each="page : ${pages}">
+                    <div class="card page-card h-100">
+                        <div class="preview-container">
+                            <iframe class="page-preview" th:srcdoc="${page.htmlContent}" sandbox="allow-same-origin"></iframe>
+                        </div>
+                        <div class="card-body">
+                            <h6 class="fw-bold mb-1 text-truncate" th:text="${page.title}">제목 없음</h6>
+                            <div class="text-muted mb-2" style="font-size:0.75rem">
+                                <i class="fas fa-clock me-1"></i>
+                                <span th:text="${#temporals.format(page.updatedAt, 'MM/dd HH:mm')}"></span>
+                            </div>
+                            <div class="d-flex gap-1 flex-wrap">
+                                <a th:href="'/editor/' + ${page.id}" class="btn btn-sm btn-outline-primary flex-fill">
+                                    <i class="fas fa-edit me-1"></i>수정
+                                </a>
+                                <a th:href="'/page/' + ${page.uuid}" target="_blank" class="btn btn-sm btn-outline-success flex-fill">
+                                    <i class="fas fa-external-link-alt me-1"></i>보기
+                                </a>
+                                <button class="btn btn-sm btn-outline-secondary url-badge"
+                                        th:data-url="'/page/' + ${page.uuid}"
+                                        onclick="copyUrl(this)" title="URL 복사">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger"
+                                        th:onclick="'deletePage(' + ${page.id} + ')'"
+                                        title="삭제">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+    <div id="toast" class="toast align-items-center text-white border-0" role="alert">
+        <div class="d-flex">
+            <div class="toast-body" id="toastMsg">완료</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function showToast(msg, type = 'success') {
+    const toast = document.getElementById('toast');
+    toast.className = `toast align-items-center text-white border-0 bg-${type}`;
+    document.getElementById('toastMsg').textContent = msg;
+    new bootstrap.Toast(toast, {delay: 3000}).show();
+}
+
+function copyUrl(btn) {
+    const url = window.location.origin + btn.dataset.url;
+    navigator.clipboard.writeText(url).then(() => showToast('URL이 복사되었습니다!'));
+}
+
+function deletePage(id) {
+    if (!confirm('이 페이지를 삭제하시겠습니까?')) return;
+    fetch(`/api/pages/${id}`, {method: 'DELETE'})
+        .then(r => r.json())
+        .then(() => { showToast('페이지가 삭제되었습니다.'); setTimeout(() => location.reload(), 1000); })
+        .catch(() => showToast('삭제 중 오류가 발생했습니다.', 'danger'));
+}
+
+function deleteFile(id) {
+    if (!confirm('이 파일을 삭제하시겠습니까?')) return;
+    fetch(`/api/files/${id}`, {method: 'DELETE'})
+        .then(r => r.json())
+        .then(() => { showToast('파일이 삭제되었습니다.'); setTimeout(() => location.reload(), 1000); })
+        .catch(() => showToast('삭제 중 오류가 발생했습니다.', 'danger'));
+}
+</script>
+</body>
+</html>

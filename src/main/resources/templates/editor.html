@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>에디터 — Page Builder</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root { --primary: #667eea; --secondary: #764ba2; }
+        * { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; overflow: hidden; }
+        body { display: flex; flex-direction: column; background: #1e1e2e; }
+
+        /* 네비게이션 */
+        .top-nav { height: 52px; min-height: 52px; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; padding: 0 16px; gap: 12px; flex-shrink: 0; z-index: 10; }
+        .top-nav .brand { color: white; font-weight: 700; font-size: 1.1rem; text-decoration: none; }
+        .top-nav .btn-nav { font-size: 0.82rem; padding: 4px 12px; }
+
+        /* 메인 레이아웃 */
+        .main-area { flex: 1; display: flex; overflow: hidden; }
+
+        /* ── 채팅 패널 ── */
+        .chat-panel { width: 400px; min-width: 300px; display: flex; flex-direction: column; background: #2d2d44; border-right: 1px solid #444; }
+        .chat-panel-header { padding: 10px 16px; background: #252540; border-bottom: 1px solid #444; flex-shrink: 0; }
+
+        /* 메시지 목록 */
+        .chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+        .chat-messages::-webkit-scrollbar { width: 4px; }
+        .chat-messages::-webkit-scrollbar-thumb { background: #555; border-radius: 2px; }
+
+        .msg-user { align-self: flex-end; background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; padding: 10px 14px; border-radius: 16px 16px 4px 16px; max-width: 88%; font-size: 0.87rem; word-break: break-word; }
+        .msg-ai   { align-self: flex-start; background: #3d3d5c; color: #e0e0e0; padding: 10px 14px; border-radius: 16px 16px 16px 4px; max-width: 88%; font-size: 0.87rem; word-break: break-word; }
+        .msg-system { align-self: center; background: #444; color: #aaa; padding: 5px 12px; border-radius: 20px; font-size: 0.77rem; }
+        .msg-time { font-size: 0.68rem; opacity: 0.55; margin-top: 3px; text-align: right; }
+
+        /* 첨부 파일 미리보기 (메시지 내) */
+        .msg-attachment { display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 5px 8px; margin-bottom: 6px; font-size: 0.78rem; }
+
+        /* ── 첨부 파일 트레이 ── */
+        .attachment-tray { padding: 6px 12px; background: #252540; border-top: 1px solid #3a3a5a; flex-shrink: 0; display: none; }
+        .attachment-tray.visible { display: block; }
+        .attach-chip { display: inline-flex; align-items: center; gap: 5px; background: #3d3d5c; border: 1px solid #555; color: #ddd; border-radius: 20px; padding: 3px 10px; font-size: 0.78rem; margin: 2px; }
+        .attach-chip.image-chip { border-color: #667eea; background: #2d2d5c; }
+        .attach-chip .remove-btn { cursor: pointer; opacity: 0.6; margin-left: 2px; }
+        .attach-chip .remove-btn:hover { opacity: 1; color: #f77; }
+        .image-thumb { width: 28px; height: 28px; object-fit: cover; border-radius: 4px; }
+
+        /* ── 입력 영역 ── */
+        .chat-input-area { padding: 10px 12px; background: #252540; border-top: 1px solid #444; flex-shrink: 0; position: relative; }
+        .input-row { display: flex; gap: 6px; align-items: flex-end; }
+        .chat-input-area textarea { background: #3d3d5c; border: 1px solid #555; color: #e0e0e0; resize: none; border-radius: 10px; font-size: 0.87rem; flex: 1; }
+        .chat-input-area textarea::placeholder { color: #888; }
+        .chat-input-area textarea:focus { background: #3d3d5c; border-color: var(--primary); color: #e0e0e0; box-shadow: 0 0 0 2px rgba(102,126,234,0.25); outline: none; }
+        .btn-send { background: linear-gradient(135deg, var(--primary), var(--secondary)); border: none; border-radius: 10px; padding: 8px 14px; color: white; font-weight: 600; flex-shrink: 0; }
+        .btn-send:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-attach { background: #3d3d5c; border: 1px solid #555; color: #aaa; border-radius: 10px; padding: 8px 11px; flex-shrink: 0; cursor: pointer; }
+        .btn-attach:hover { border-color: var(--primary); color: var(--primary); }
+        .btn-hint { font-size: 0.72rem; color: #777; margin-top: 4px; }
+
+        /* 내 파일 드롭업 */
+        .myfiles-panel { display: none; position: absolute; bottom: 100%; left: 12px; right: 12px; background: #2d2d44; border: 1px solid #555; border-radius: 10px; box-shadow: 0 -4px 20px rgba(0,0,0,0.4); z-index: 100; max-height: 220px; overflow-y: auto; }
+        .myfiles-panel.open { display: block; }
+        .myfiles-panel::-webkit-scrollbar { width: 4px; }
+        .myfiles-panel::-webkit-scrollbar-thumb { background: #555; border-radius: 2px; }
+        .myfiles-header { padding: 8px 12px; background: #252540; border-radius: 10px 10px 0 0; font-size: 0.78rem; color: #aaa; border-bottom: 1px solid #444; }
+        .myfile-item { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; font-size: 0.82rem; color: #ddd; border-bottom: 1px solid #383856; transition: background 0.15s; }
+        .myfile-item:last-child { border-bottom: none; }
+        .myfile-item:hover { background: #3d3d5c; }
+        .myfile-item.already-added { opacity: 0.45; cursor: default; }
+
+        /* ── 프리뷰 패널 ── */
+        .preview-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+        .preview-toolbar { padding: 8px 16px; background: #252540; border-bottom: 1px solid #444; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+        .preview-toolbar .title-input { background: transparent; border: none; color: #e0e0e0; font-size: 1rem; font-weight: 600; flex: 1; min-width: 0; }
+        .preview-toolbar .title-input:focus { outline: none; border-bottom: 1px solid var(--primary); }
+        .preview-iframe { flex: 1; border: none; background: white; }
+
+        /* 로딩 오버레이 */
+        .loading-overlay { display: none; position: absolute; inset: 0; background: rgba(30,30,46,0.92); z-index: 50; align-items: center; justify-content: center; flex-direction: column; gap: 10px; color: white; text-align: center; padding: 24px; }
+        .loading-overlay.active { display: flex; }
+        .loading-stats { display: flex; gap: 10px; margin-top: 4px; }
+        .stat-badge { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #ccc; border-radius: 20px; padding: 4px 12px; font-size: 0.78rem; }
+
+        /* 이미지 풀스크린 모달 */
+        #imgModal .modal-dialog { max-width: 90vw; }
+        #imgModal img { max-width: 100%; border-radius: 8px; }
+
+        /* 툴바 버튼 */
+        .toolbar-btn { font-size: 0.78rem; padding: 3px 9px; }
+
+        /* 버전 모달 */
+        .version-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid #383856; cursor: pointer; transition: background 0.15s; }
+        .version-item:last-child { border-bottom: none; }
+        .version-item:hover { background: #3d3d5c; }
+        .version-badge { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 20px; padding: 3px 10px; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; }
+        .version-meta { flex: 1; min-width: 0; }
+        .version-meta .vm-title { font-size: 0.85rem; color: #e0e0e0; font-weight: 600; }
+        .version-meta .vm-info  { font-size: 0.75rem; color: #999; margin-top: 2px; }
+        .version-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+        /* HTML 코드 모달 */
+        #htmlCodeArea { background: #1e1e2e; color: #a8ff78; font-size: 0.78rem; font-family: 'Consolas', monospace; border: 1px solid #444; border-radius: 8px; resize: none; }
+
+        /* 비교 뷰 */
+        .compare-view { display: flex; flex: 1; overflow: hidden; }
+        .compare-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+        .compare-pane + .compare-pane { border-left: 3px solid #667eea; }
+        .compare-label { padding: 5px 14px; font-size: 0.75rem; font-weight: 600; text-align: center; flex-shrink: 0; letter-spacing: 0.03em; }
+        .compare-label.old { background: #3d2a2a; color: #ffb3b3; border-bottom: 1px solid #5a3535; }
+        .compare-label.new { background: #2a3d2a; color: #b3ffb3; border-bottom: 1px solid #355a35; }
+        .compare-iframe { flex: 1; border: none; background: white; }
+        .compare-actions { display: flex; gap: 6px; align-items: center; margin-left: auto; }
+    </style>
+</head>
+<body>
+
+<!-- 상단 네비게이션 -->
+<nav class="top-nav">
+    <a href="/dashboard" class="brand"><i class="fas fa-magic me-2"></i>Page Builder</a>
+    <span class="text-white opacity-50">|</span>
+    <span class="text-white opacity-75 small" th:text="${pageId != null ? '페이지 수정' : '새 페이지'}"></span>
+    <div class="ms-auto d-flex gap-2">
+        <button class="btn btn-light btn-nav fw-bold" onclick="savePage()" id="btnSave">
+            <i class="fas fa-save me-1"></i>저장
+        </button>
+        <a th:if="${pageId != null}" th:href="'/page/' + ${page?.uuid}" target="_blank" class="btn btn-outline-light btn-nav">
+            <i class="fas fa-external-link-alt me-1"></i>공개 URL
+        </a>
+        <a href="/docs" class="btn btn-outline-light btn-nav"><i class="fas fa-book me-1"></i>문서</a>
+        <a href="/dashboard" class="btn btn-outline-light btn-nav">대시보드</a>
+    </div>
+</nav>
+
+<!-- 메인 영역 -->
+<div class="main-area">
+
+    <!-- ── 채팅 패널 ── -->
+    <div class="chat-panel">
+        <div class="chat-panel-header" style="display:flex; align-items:center; justify-content:space-between;">
+            <div>
+                <div class="text-white fw-bold small"><i class="fas fa-comments me-1"></i>AI 채팅</div>
+                <div class="text-muted" style="font-size:0.73rem">원하는 화면을 설명하거나 참고 파일을 첨부하세요</div>
+            </div>
+            <button th:if="${pageId != null}" class="btn btn-outline-secondary btn-sm" style="font-size:0.72rem; padding:3px 8px;"
+                    onclick="reloadHistory()" title="대화 내역 다시 불러오기">
+                <i class="fas fa-sync-alt me-1"></i>내역 새로고침
+            </button>
+        </div>
+
+        <!-- 메시지 목록 -->
+        <div class="chat-messages" id="chatMessages">
+            <div class="msg-system">안녕하세요! 원하는 페이지를 설명하거나 📎 파일을 첨부해 주세요 ✨</div>
+
+            <!-- 이전 대화 내역: JS로 API 호출해서 렌더링 -->
+        </div>
+
+        <!-- 첨부 파일 트레이 -->
+        <div class="attachment-tray" id="attachmentTray">
+            <div class="text-muted mb-1" style="font-size:0.73rem">
+                <i class="fas fa-paperclip me-1"></i>첨부 파일
+                <span class="text-warning ms-1" id="visionNote" style="display:none">
+                    <i class="fas fa-eye me-1"></i>이미지 포함 — llava 비전 모델 사용
+                </span>
+            </div>
+            <div id="chipContainer"></div>
+        </div>
+
+        <!-- 입력 영역 -->
+        <div class="chat-input-area">
+
+            <!-- 내 파일 드롭업 -->
+            <div class="myfiles-panel" id="myFilesPanel">
+                <div class="myfiles-header">
+                    <i class="fas fa-folder-open me-1"></i>업로드된 파일 — 클릭하여 첨부
+                </div>
+                <div id="myFilesList">
+                    <div class="myfile-item text-muted"><i class="fas fa-spinner fa-spin me-2"></i>불러오는 중...</div>
+                </div>
+            </div>
+
+            <div class="input-row">
+                <!-- 새 파일 업로드 -->
+                <button class="btn-attach" title="새 파일 업로드 (이미지·PPT·Excel)"
+                        onclick="document.getElementById('fileAttachInput').click()">
+                    <i class="fas fa-paperclip"></i>
+                </button>
+                <input type="file" id="fileAttachInput" class="d-none"
+                       accept=".png,.jpg,.jpeg,.gif,.webp,.pptx,.ppt,.xlsx,.xls"
+                       onchange="handleFileAttach(this)">
+
+                <!-- 내 파일 선택 -->
+                <button class="btn-attach" title="이전에 업로드한 파일 선택"
+                        onclick="toggleMyFiles()" id="btnMyFiles">
+                    <i class="fas fa-folder"></i>
+                </button>
+
+                <textarea id="chatInput" rows="3" class="form-control"
+                          placeholder="예: 로그인 페이지 만들어줘&#10;또는 이미지/PPT를 첨부 후 전송"
+                          onkeydown="handleKey(event)"></textarea>
+
+                <button class="btn-send" id="btnSend" onclick="sendMessage()">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+            <div class="btn-hint">
+                <i class="fas fa-lightbulb me-1 text-warning"></i>
+                <strong>이미지</strong> 첨부 시 화면 레이아웃을 그대로 재현합니다.
+                PPT 슬라이드는 <strong>스크린샷(PNG)</strong>으로 저장 후 첨부하세요.
+            </div>
+        </div>
+    </div>
+
+    <!-- ── 프리뷰 패널 ── -->
+    <div class="preview-panel">
+        <div class="preview-toolbar">
+            <i class="fas fa-eye text-muted me-1"></i>
+            <input type="text" id="pageTitle" class="title-input"
+                   placeholder="페이지 제목..."
+                   th:value="${page?.title}">
+            <span class="text-muted small" id="previewStatus">
+                <span th:if="${page?.htmlContent != null}">저장된 페이지</span>
+                <span th:if="${page?.htmlContent == null}">미리보기 대기 중</span>
+            </span>
+            <!-- 툴바 버튼들 -->
+            <div class="d-flex gap-1 ms-2">
+                <button class="btn btn-outline-secondary btn-sm toolbar-btn"
+                        onclick="showHtmlCode()" title="HTML 코드 보기">
+                    <i class="fas fa-code"></i>
+                </button>
+                <button th:if="${pageId != null}" class="btn btn-outline-info btn-sm toolbar-btn"
+                        onclick="openVersionModal()" title="버전 목록">
+                    <i class="fas fa-layer-group me-1"></i>버전
+                </button>
+            </div>
+            <!-- 비교 모드 버튼 (수정 후에만 표시) -->
+            <div class="compare-actions" id="compareActions">
+                <button class="btn btn-outline-warning btn-sm" onclick="revertVersion()" title="이전 버전으로 되돌리기">
+                    <i class="fas fa-undo me-1"></i>되돌리기
+                </button>
+                <button class="btn btn-outline-success btn-sm" onclick="acceptVersion()" title="새 버전 유지">
+                    <i class="fas fa-check me-1"></i>유지
+                </button>
+            </div>
+        </div>
+
+        <!-- 로딩 오버레이 (스트리밍 진행 표시) -->
+        <div class="loading-overlay" id="loadingOverlay">
+            <div class="spinner-border text-light mb-1" style="width:2.5rem;height:2.5rem;"></div>
+            <div class="fw-bold" id="loadingText">AI가 페이지를 생성하고 있습니다...</div>
+            <div style="font-size:0.82rem; color:#aaa; margin-top:2px;" id="loadingSubtext">잠시만 기다려주세요</div>
+            <div class="loading-stats" id="loadingStats" style="display:none">
+                <span class="stat-badge"><i class="fas fa-clock me-1"></i><span id="statElapsed">0초</span></span>
+                <span class="stat-badge"><i class="fas fa-code me-1"></i><span id="statTokens">0</span>개 토큰</span>
+            </div>
+            <!-- 실시간 생성 코드 미리보기 -->
+            <div id="streamPreviewBox" style="display:none; width:90%; max-width:560px; margin-top:8px;">
+                <div style="font-size:0.7rem; color:#888; margin-bottom:3px; text-align:left;">
+                    <i class="fas fa-stream me-1"></i>생성 중인 코드 (실시간)
+                </div>
+                <pre id="streamPreviewText" style="
+                    background:rgba(0,0,0,0.5); color:#7fff7f; font-size:0.68rem;
+                    border-radius:8px; padding:8px 12px; max-height:120px; overflow:hidden;
+                    text-align:left; white-space:pre-wrap; word-break:break-all; margin:0;
+                "></pre>
+            </div>
+        </div>
+
+        <!-- 단일 프리뷰 -->
+        <iframe id="previewFrame" class="preview-iframe"
+                th:srcdoc="${page?.htmlContent}"
+                sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+
+        <!-- 비교 뷰 (수정 후 before/after, 기본 숨김) -->
+        <div id="compareView" class="compare-view" style="display:none;">
+            <div class="compare-pane">
+                <div class="compare-label old"><i class="fas fa-history me-1"></i>이전 버전</div>
+                <iframe id="prevFrame" class="compare-iframe"
+                        sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+            </div>
+            <div class="compare-pane">
+                <div class="compare-label new"><i class="fas fa-magic me-1"></i>새 버전</div>
+                <iframe id="newFrame" class="compare-iframe"
+                        sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 버전 히스토리 모달 -->
+<div class="modal fade" id="versionModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content" style="background:#2d2d44; border-radius:16px; border:1px solid #555;">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold text-white">
+                    <i class="fas fa-layer-group me-2 text-info"></i>버전 히스토리
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <!-- 분할: 목록(좌) + 미리보기(우) -->
+                <div style="display:flex; height:480px;">
+                    <!-- 버전 목록 -->
+                    <div style="width:300px; flex-shrink:0; overflow-y:auto; border-right:1px solid #444;">
+                        <div id="versionList" style="background:#252540;">
+                            <div class="p-3 text-muted small text-center">
+                                <i class="fas fa-spinner fa-spin me-1"></i>불러오는 중...
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 버전 미리보기 -->
+                    <div style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+                        <div style="padding:8px 14px; background:#252540; border-bottom:1px solid #444; font-size:0.78rem; color:#aaa;" id="versionPreviewLabel">
+                            버전을 선택하면 미리보기가 표시됩니다
+                        </div>
+                        <iframe id="versionPreviewFrame" style="flex:1; border:none; background:white;"
+                                sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-0 pt-2">
+                <span class="text-muted small me-auto" id="versionPublishStatus"></span>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+                <button type="button" class="btn btn-primary fw-bold" id="btnPublishVersion"
+                        onclick="publishSelectedVersion()" disabled>
+                    <i class="fas fa-globe me-1"></i>이 버전 게시
+                </button>
+                <button type="button" class="btn btn-success fw-bold" id="btnApplyVersion"
+                        onclick="applySelectedVersion()" disabled>
+                    <i class="fas fa-check me-1"></i>에디터에 적용
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- HTML 코드 보기 모달 -->
+<div class="modal fade" id="htmlCodeModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content" style="background:#2d2d44; border-radius:16px; border:1px solid #555;">
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-bold text-white">
+                    <i class="fas fa-code me-2 text-warning"></i>HTML 소스 코드
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body pt-0">
+                <div class="d-flex gap-2 mb-2">
+                    <button class="btn btn-outline-light btn-sm" onclick="copyHtmlCode()">
+                        <i class="fas fa-copy me-1"></i>복사
+                    </button>
+                    <button class="btn btn-outline-light btn-sm" onclick="downloadHtmlCode()">
+                        <i class="fas fa-download me-1"></i>다운로드
+                    </button>
+                    <span class="text-muted small ms-auto align-self-center" id="htmlCodeSize"></span>
+                </div>
+                <textarea id="htmlCodeArea" class="form-control" rows="20" readonly></textarea>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 저장 모달 -->
+<div class="modal fade" id="saveModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius:16px;">
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-bold"><i class="fas fa-save me-2 text-success"></i>페이지 저장</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">페이지 제목</label>
+                    <input type="text" id="modalTitle" class="form-control" placeholder="제목을 입력하세요">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">설명 (선택)</label>
+                    <textarea id="modalDesc" class="form-control" rows="2" placeholder="간단한 설명"></textarea>
+                </div>
+                <div class="alert alert-info small mb-0">
+                    <i class="fas fa-info-circle me-1"></i>저장 후 고유 URL이 발급됩니다.
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-success fw-bold" onclick="confirmSave()">
+                    <i class="fas fa-save me-1"></i>저장하기
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 이미지 확대 모달 -->
+<div class="modal fade" id="imgModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark border-0">
+            <div class="modal-body p-2 text-center">
+                <img id="imgModalSrc" src="" alt="첨부 이미지">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script th:inline="javascript">
+    const PAGE_ID   = /*[[${pageId}]]*/ null;
+    let currentHtml = /*[[${page?.htmlContent ?: ''}]]*/ '';
+    let sessionId   = null;
+    let previousHtml = null;  // 비교용: 수정 전 버전
+
+    // 첨부 파일 목록: [{id, name, type, dataUrl(이미지용)}]
+    let attachments = [];
+
+    // ─────────────────────────────────────────
+    // 수정 모드: API로 이전 대화 내역 로드
+    // ─────────────────────────────────────────
+    function loadPageHistory(clearFirst) {
+        if (!PAGE_ID) return;
+        if (clearFirst) {
+            const c = document.getElementById('chatMessages');
+            c.innerHTML = '';
+        }
+        fetch(`/api/pages/${PAGE_ID}/history`)
+            .then(r => {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(messages => {
+                if (messages && messages.length > 0) {
+                    renderRestoredHistory(messages);
+                } else {
+                    addSystemMsg('💬 저장된 대화 내역이 없습니다. 아래에 수정 요청을 입력하세요.');
+                }
+            })
+            .catch(err => {
+                console.error('히스토리 로드 실패:', err);
+                addSystemMsg('⚠️ 대화 내역을 불러오지 못했습니다 (' + err.message + ')');
+            });
+    }
+
+    function reloadHistory() {
+        loadPageHistory(true);
+    }
+
+    if (PAGE_ID) loadPageHistory(false);
+
+    // ─────────────────────────────────────────
+    // 새 페이지 모드: URL 쿼리 파라미터(?s=)에서 이전 세션 복원
+    // ─────────────────────────────────────────
+    if (!PAGE_ID) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const storedId  = urlParams.get('s');
+        if (storedId) {
+            sessionId = storedId;
+            fetch(`/api/pages/session-history?sessionId=${encodeURIComponent(storedId)}`)
+                .then(r => r.ok ? r.json() : Promise.reject())
+                .then(messages => {
+                    if (messages && messages.length > 0) renderRestoredHistory(messages);
+                })
+                .catch(err => console.warn('세션 히스토리 로드 실패:', err));
+        }
+    }
+
+    function renderRestoredHistory(messages) {
+        const container = document.getElementById('chatMessages');
+
+        const userMsgs = messages.filter(m => (m.role||'').toLowerCase() === 'user').length;
+        const hdr = document.createElement('div');
+        hdr.className = 'msg-system';
+        hdr.innerHTML = `<i class="fas fa-history me-1"></i>이전 대화 내역 (${userMsgs}회 요청)`;
+        container.appendChild(hdr);
+
+        let versionCount = 0;
+        let lastHtml = null;
+
+        messages.forEach(msg => {
+            const role = (msg.role || '').toLowerCase();
+            if (role === 'user') {
+                const el = document.createElement('div');
+                el.className = 'msg-user';
+                el.innerHTML = `${escHtml(msg.content)}<div class="msg-time">(이전)</div>`;
+                container.appendChild(el);
+            } else if (role === 'assistant') {
+                versionCount++;
+                lastHtml = msg.content;
+                const el = document.createElement('div');
+                el.className = 'msg-ai';
+                if (msg.modelName) {
+                    // 메타데이터 있으면 작업 요약 카드
+                    const secs     = msg.elapsedMs ? (msg.elapsedMs / 1000).toFixed(1) : '?';
+                    const tokens   = msg.tokenCount ? Number(msg.tokenCount).toLocaleString() : '?';
+                    el.innerHTML = `
+                        <div style="font-weight:700;margin-bottom:6px">
+                            <i class="fas fa-check-circle text-success me-1"></i>${versionCount}번째 버전 생성 완료
+                        </div>
+                        <div style="font-size:0.82rem;color:#bbb;line-height:1.9">
+                            <div>🤖 모델: <strong style="color:#a0c4ff">${escHtml(msg.modelName)}</strong></div>
+                            <div>⏱ 처리 시간: <strong>${secs}초</strong></div>
+                            <div>📝 생성 토큰: <strong>${tokens}개</strong></div>
+                        </div>
+                        <div style="font-size:0.75rem;color:#888;margin-top:6px">수정이 필요하면 아래에 요청사항을 입력하세요</div>`;
+                } else {
+                    // 메타데이터 없는 구버전
+                    el.innerHTML = `<i class="fas fa-check-circle text-success me-1"></i>
+                        <strong>${versionCount}번째 버전</strong> 생성 완료
+                        <div style="font-size:0.75rem;color:#aaa;margin-top:3px">수정이 필요하면 아래에 요청사항을 입력하세요</div>`;
+                }
+                container.appendChild(el);
+            }
+        });
+
+        const ftr = document.createElement('div');
+        ftr.className = 'msg-system';
+        ftr.textContent = '— 이전 내역 끝 · 계속 수정하세요 —';
+        container.appendChild(ftr);
+
+        container.scrollTop = container.scrollHeight;
+
+        if (lastHtml) {
+            currentHtml = lastHtml;
+            updatePreview(currentHtml);
+        }
+    }
+
+    // 경과시간 타이머 / 스트림 상태
+    let elapsedTimer    = null;
+    let elapsedStart    = 0;
+    let tokenCounter    = 0;
+    let liveAccumulated = '';
+
+    // ─────────────────────────────────────────
+    // 파일 첨부 (새 업로드)
+    // ─────────────────────────────────────────
+    async function handleFileAttach(input) {
+        const file = input.files[0];
+        if (!file) return;
+        input.value = '';
+
+        const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(file.name);
+        showUploadingChip(file.name);
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res  = await fetch('/api/files/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+
+            if (data.error) {
+                removeUploadingChip();
+                addSystemMsg('❌ 업로드 실패: ' + data.error);
+                return;
+            }
+
+            removeUploadingChip();
+
+            let dataUrl = null;
+            if (isImage && data.id) {
+                const ext  = file.name.split('.').pop().toLowerCase();
+                const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+                           : ext === 'gif' ? 'image/gif'
+                           : ext === 'webp' ? 'image/webp' : 'image/png';
+                const contentRes  = await fetch(`/api/files/${data.id}/content`);
+                const contentData = await contentRes.json();
+                if (contentData.imageData) {
+                    dataUrl = `data:${mime};base64,${contentData.imageData}`;
+                }
+            }
+
+            attachments.push({ id: data.id, name: file.name, type: data.fileType, dataUrl });
+            renderTray();
+            addSystemMsg(`📎 "${file.name}" 첨부됨`);
+            refreshMyFilesIfOpen();
+
+        } catch (e) {
+            removeUploadingChip();
+            addSystemMsg('❌ 업로드 오류: ' + e.message);
+        }
+    }
+
+    // ─────────────────────────────────────────
+    // 내 파일 드롭업
+    // ─────────────────────────────────────────
+    let myFilesLoaded = false;
+    let myFilesList   = [];
+
+    function toggleMyFiles() {
+        const panel = document.getElementById('myFilesPanel');
+        const isOpen = panel.classList.contains('open');
+        if (isOpen) {
+            panel.classList.remove('open');
+        } else {
+            panel.classList.add('open');
+            loadMyFiles();
+        }
+    }
+
+    async function loadMyFiles() {
+        try {
+            const res  = await fetch('/api/files');
+            myFilesList = await res.json();
+            renderMyFilesList();
+        } catch (e) {
+            document.getElementById('myFilesList').innerHTML =
+                '<div class="myfile-item text-danger">불러오기 실패</div>';
+        }
+    }
+
+    function refreshMyFilesIfOpen() {
+        if (document.getElementById('myFilesPanel').classList.contains('open')) {
+            loadMyFiles();
+        }
+    }
+
+    function renderMyFilesList() {
+        const container = document.getElementById('myFilesList');
+        if (!myFilesList || myFilesList.length === 0) {
+            container.innerHTML = '<div class="myfile-item text-muted" style="cursor:default">업로드된 파일이 없습니다</div>';
+            return;
+        }
+
+        const addedIds = new Set(attachments.map(a => a.id));
+        container.innerHTML = '';
+
+        myFilesList.forEach(file => {
+            const alreadyAdded = addedIds.has(file.id);
+            const item = document.createElement('div');
+            item.className = 'myfile-item' + (alreadyAdded ? ' already-added' : '');
+
+            const iconClass = file.fileType === 'EXCEL'
+                ? 'fa-file-excel text-success'
+                : file.fileType === 'IMAGE'
+                ? 'fa-image text-primary'
+                : 'fa-file-powerpoint text-danger';
+
+            item.innerHTML = `
+                <i class="fas ${iconClass}"></i>
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(file.originalFilename)}</span>
+                ${alreadyAdded
+                    ? '<span class="text-muted" style="font-size:0.72rem">첨부됨</span>'
+                    : '<i class="fas fa-plus text-muted" style="font-size:0.72rem"></i>'}
+            `;
+
+            if (!alreadyAdded) {
+                item.onclick = () => addExistingFile(file.id, file.originalFilename, file.fileType);
+            }
+            container.appendChild(item);
+        });
+    }
+
+    async function addExistingFile(id, name, type) {
+        document.getElementById('myFilesPanel').classList.remove('open');
+
+        let dataUrl = null;
+        if (type === 'IMAGE') {
+            try {
+                const res  = await fetch(`/api/files/${id}/content`);
+                const data = await res.json();
+                if (data.imageData) {
+                    const ext  = name.split('.').pop().toLowerCase();
+                    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+                               : ext === 'gif' ? 'image/gif'
+                               : ext === 'webp' ? 'image/webp' : 'image/png';
+                    dataUrl = `data:${mime};base64,${data.imageData}`;
+                }
+            } catch (e) { /* 이미지 미리보기 없이 첨부 */ }
+        }
+
+        attachments.push({ id, name, type, dataUrl });
+        renderTray();
+        addSystemMsg(`📎 "${name}" 첨부됨`);
+    }
+
+    // 드롭업 외부 클릭 시 닫기
+    document.addEventListener('click', e => {
+        const panel = document.getElementById('myFilesPanel');
+        const btn   = document.getElementById('btnMyFiles');
+        if (!panel.contains(e.target) && !btn.contains(e.target)) {
+            panel.classList.remove('open');
+        }
+    });
+
+    // ─────────────────────────────────────────
+    // 첨부 트레이
+    // ─────────────────────────────────────────
+    function renderTray() {
+        const tray      = document.getElementById('attachmentTray');
+        const container = document.getElementById('chipContainer');
+        const visionNote = document.getElementById('visionNote');
+
+        if (attachments.length === 0) {
+            tray.classList.remove('visible');
+            return;
+        }
+        tray.classList.add('visible');
+        visionNote.style.display = attachments.some(a => a.type === 'IMAGE') ? 'inline' : 'none';
+
+        container.innerHTML = '';
+        attachments.forEach((att, idx) => {
+            const chip = document.createElement('span');
+            chip.className = `attach-chip ${att.type === 'IMAGE' ? 'image-chip' : ''}`;
+
+            let iconHtml = '';
+            if (att.type === 'IMAGE' && att.dataUrl) {
+                iconHtml = `<img src="${att.dataUrl}" class="image-thumb" style="cursor:pointer"
+                                 onclick="openImgModal('${att.dataUrl}')" title="클릭하여 확대">`;
+            } else if (att.type === 'EXCEL') {
+                iconHtml = '<i class="fas fa-file-excel text-success"></i>';
+            } else if (att.type === 'IMAGE') {
+                iconHtml = '<i class="fas fa-image text-primary"></i>';
+            } else {
+                iconHtml = '<i class="fas fa-file-powerpoint text-danger"></i>';
+            }
+
+            chip.innerHTML = `${iconHtml}
+                <span class="text-truncate" style="max-width:120px" title="${escHtml(att.name)}">${escHtml(att.name)}</span>
+                <span class="remove-btn" onclick="removeAttachment(${idx})">
+                    <i class="fas fa-times"></i>
+                </span>`;
+            container.appendChild(chip);
+        });
+    }
+
+    function removeAttachment(idx) {
+        attachments.splice(idx, 1);
+        renderTray();
+    }
+
+    function showUploadingChip(name) {
+        document.getElementById('attachmentTray').classList.add('visible');
+        const container = document.getElementById('chipContainer');
+        const chip = document.createElement('span');
+        chip.className = 'attach-chip';
+        chip.id = 'uploading-chip';
+        chip.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>${escHtml(name)} 업로드 중...`;
+        container.appendChild(chip);
+    }
+    function removeUploadingChip() {
+        const el = document.getElementById('uploading-chip');
+        if (el) el.remove();
+    }
+
+    function openImgModal(dataUrl) {
+        document.getElementById('imgModalSrc').src = dataUrl;
+        new bootstrap.Modal(document.getElementById('imgModal')).show();
+    }
+
+    // ─────────────────────────────────────────
+    // 채팅 & 스트리밍 생성
+    // ─────────────────────────────────────────
+    function handleKey(e) {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('chatInput');
+        const msg   = input.value.trim();
+        if (!msg && attachments.length === 0) return;
+
+        const displayMsg     = msg || '(첨부 파일을 참고하여 페이지를 만들어주세요)';
+        const sentAttachments = [...attachments];
+
+        addUserMsgWithAttachments(displayMsg, sentAttachments);
+        input.value = '';
+
+        const hasVision = sentAttachments.some(a => a.type === 'IMAGE');
+        setLoading(true, hasVision);
+
+        // 기존 버전 저장 (수정 시 비교용)
+        if (PAGE_ID && currentHtml) previousHtml = currentHtml;
+
+        const payload = {
+            message:   displayMsg,
+            sessionId: sessionId,
+            pageId:    PAGE_ID,
+            fileIds:   sentAttachments.map(a => a.id)
+        };
+
+        attachments = [];
+        renderTray();
+
+        try {
+            const res = await fetch('/api/chat/stream', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify(payload)
+            });
+
+            if (!res.ok) {
+                addSystemMsg('❌ 서버 오류: ' + res.status);
+                return;
+            }
+
+            await readSseStream(res, sentAttachments);
+
+        } catch (e) {
+            addSystemMsg('❌ 서버 연결 오류: ' + e.message);
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    // SSE 스트림 읽기
+    async function readSseStream(res, sentAttachments) {
+        const reader  = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer        = '';
+        let currentEvent  = '';
+        let receivedComplete = false;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // 불완전한 마지막 줄은 버퍼에 보관
+
+            for (const line of lines) {
+                if (line.startsWith('event:')) {
+                    currentEvent = line.slice(6).trim();
+                    if (currentEvent === 'complete') receivedComplete = true;
+                } else if (line.startsWith('data:')) {
+                    const data = line.slice(5).trim();
+                    handleSseEvent(currentEvent, data, sentAttachments);
+                } else if (line === '') {
+                    currentEvent = '';
+                }
+            }
+        }
+
+        // 스트림이 complete 이벤트 없이 종료된 경우
+        if (!receivedComplete) {
+            addSystemMsg('⚠️ AI 응답이 완료되지 않았습니다. 서버 로그를 확인하거나 다시 시도해 보세요.');
+        }
+    }
+
+    function handleSseEvent(eventName, data, sentAttachments) {
+        switch (eventName) {
+            case 'status':
+                document.getElementById('loadingText').textContent = data;
+                document.getElementById('loadingStats').style.display = 'flex';
+                break;
+
+            case 'token':
+                tokenCounter++;
+                document.getElementById('statTokens').textContent = tokenCounter.toLocaleString();
+                // 실시간 코드 스트림 표시 (status 이벤트 이후부터)
+                liveAccumulated += data;
+                if (tokenCounter === 1) {
+                    document.getElementById('streamPreviewBox').style.display = 'block';
+                }
+                // 마지막 120자만 표시 (스크롤 없이 흘러가는 느낌)
+                document.getElementById('streamPreviewText').textContent =
+                    liveAccumulated.slice(-300);
+                break;
+
+            case 'complete':
+                try {
+                    const result = JSON.parse(data);
+                    if (result.sessionId) sessionId = result.sessionId;
+                    // 새 페이지면 sessionId를 URL에 반영 (새로고침 시 복원용)
+                    if (!PAGE_ID && result.sessionId) {
+                        history.replaceState({}, '', `?s=${encodeURIComponent(result.sessionId)}`);
+                    }
+
+                    if (result.html && result.html.trim().length > 200) {
+                        currentHtml = result.html;
+                        // 이전 버전이 있으면 비교 뷰, 없으면 단일 뷰
+                        if (previousHtml) {
+                            showCompareView(previousHtml, currentHtml);
+                        } else {
+                            updatePreview(currentHtml);
+                        }
+                    } else {
+                        // 모델이 내용 없는 HTML을 반환한 경우
+                        addSystemMsg('⚠️ AI가 빈 페이지를 생성했습니다. 더 구체적으로 요청해 보세요. (예: "로그인 페이지 만들어줘 — 이메일, 비밀번호 입력 포함")');
+                        if (result.html) {
+                            currentHtml = result.html;
+                            updatePreview(currentHtml);
+                        }
+                    }
+
+                    const fileNames = sentAttachments.map(a => a.name);
+                    addWorkSummaryMsg(result.modelName, result.elapsedMs, result.tokenCount, fileNames);
+                } catch (e) {
+                    addSystemMsg('❌ 응답 파싱 오류: ' + e.message);
+                }
+                break;
+
+            case 'error':
+                addSystemMsg('❌ AI 오류: ' + data);
+                break;
+        }
+    }
+
+    // ─────────────────────────────────────────
+    // 로딩 상태 & 타이머
+    // ─────────────────────────────────────────
+    function setLoading(on, isVision) {
+        document.getElementById('loadingOverlay').classList.toggle('active', on);
+        document.getElementById('btnSend').disabled = on;
+
+        if (on) {
+            tokenCounter    = 0;
+            liveAccumulated = '';
+            document.getElementById('statTokens').textContent = '0';
+            document.getElementById('loadingStats').style.display    = 'none';
+            document.getElementById('streamPreviewBox').style.display = 'none';
+            document.getElementById('streamPreviewText').textContent  = '';
+
+            if (isVision) {
+                document.getElementById('loadingText').textContent = '이미지를 분석하여 페이지를 생성하고 있습니다...';
+                document.getElementById('loadingSubtext').textContent = '비전 모델(llava) 사용 중 — 시간이 걸릴 수 있습니다';
+            } else {
+                document.getElementById('loadingText').textContent = 'AI가 페이지를 생성하고 있습니다...';
+                document.getElementById('loadingSubtext').textContent = '잠시만 기다려주세요';
+            }
+            startElapsedTimer();
+        } else {
+            stopElapsedTimer();
+        }
+    }
+
+    function startElapsedTimer() {
+        elapsedStart = Date.now();
+        elapsedTimer = setInterval(() => {
+            const sec = ((Date.now() - elapsedStart) / 1000).toFixed(0);
+            document.getElementById('statElapsed').textContent = sec + '초';
+        }, 1000);
+    }
+
+    function stopElapsedTimer() {
+        if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+    }
+
+    // ─────────────────────────────────────────
+    // 메시지 렌더링
+    // ─────────────────────────────────────────
+    function addUserMsgWithAttachments(text, attList) {
+        const container = document.getElementById('chatMessages');
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'align-self:flex-end; max-width:90%; display:flex; flex-direction:column; align-items:flex-end;';
+
+        attList.forEach(att => {
+            if (att.type === 'IMAGE' && att.dataUrl) {
+                const imgDiv = document.createElement('div');
+                imgDiv.className = 'msg-attachment';
+                imgDiv.style.cssText = 'align-self:flex-end; flex-direction:column; background:#2d2d5c; border:1px solid #667eea;';
+                imgDiv.innerHTML = `<img src="${att.dataUrl}" style="max-width:200px;max-height:140px;border-radius:6px;cursor:pointer"
+                                        onclick="openImgModal('${att.dataUrl}')">
+                                   <span style="font-size:0.72rem;color:#aaa;margin-top:3px">${escHtml(att.name)}</span>`;
+                wrap.appendChild(imgDiv);
+            } else if (att.type !== 'IMAGE') {
+                const fileDiv = document.createElement('div');
+                fileDiv.className = 'msg-attachment';
+                fileDiv.style.cssText = 'align-self:flex-end; background:#2d2d44; border:1px solid #555;';
+                const icon = att.type === 'EXCEL' ? 'fa-file-excel text-success' : 'fa-file-powerpoint text-danger';
+                fileDiv.innerHTML = `<i class="fas ${icon}"></i> ${escHtml(att.name)}`;
+                wrap.appendChild(fileDiv);
+            }
+        });
+
+        const bubble = document.createElement('div');
+        bubble.className = 'msg-user';
+        bubble.innerHTML = `${escHtml(text)}<div class="msg-time">${nowTime()}</div>`;
+        wrap.appendChild(bubble);
+
+        container.appendChild(wrap);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function addWorkSummaryMsg(modelName, elapsedMs, tokenCount, fileNames) {
+        const container = document.getElementById('chatMessages');
+        const div = document.createElement('div');
+        div.className = 'msg-ai';
+
+        const secs      = (elapsedMs / 1000).toFixed(1);
+        const tokensStr = Number(tokenCount).toLocaleString();
+        const filesHtml = fileNames.length > 0
+            ? `<div>📎 참고 파일: ${escHtml(fileNames.join(', '))}</div>` : '';
+
+        div.innerHTML = `
+            <div style="font-weight:700; margin-bottom:6px">
+                <i class="fas fa-check-circle text-success me-1"></i>페이지 생성 완료!
+            </div>
+            <div style="font-size:0.82rem; color:#bbb; line-height:1.9">
+                <div>🤖 모델: <strong style="color:#a0c4ff">${escHtml(modelName)}</strong></div>
+                <div>⏱ 처리 시간: <strong>${secs}초</strong></div>
+                <div>📝 생성 토큰: <strong>${tokensStr}개</strong></div>
+                ${filesHtml}
+            </div>
+            <div style="font-size:0.75rem; color:#888; margin-top:6px">
+                마음에 드시면 저장 버튼을 누르세요! 수정 요청도 계속 할 수 있습니다.
+            </div>
+            <div class="msg-time">${nowTime()}</div>`;
+
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function addSystemMsg(content) {
+        const container = document.getElementById('chatMessages');
+        const div = document.createElement('div');
+        div.className = 'msg-system';
+        div.textContent = content;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function updatePreview(html) {
+        document.getElementById('previewFrame').srcdoc = html;
+        document.getElementById('previewStatus').textContent = '생성 완료 ✓';
+    }
+
+    // ─────────────────────────────────────────
+    // 버전 비교
+    // ─────────────────────────────────────────
+    function showCompareView(oldHtml, newHtml) {
+        document.getElementById('previewFrame').style.display = 'none';
+        document.getElementById('prevFrame').srcdoc = oldHtml;
+        document.getElementById('newFrame').srcdoc  = newHtml;
+        document.getElementById('compareView').style.display    = 'flex';
+        document.getElementById('compareActions').style.display = 'flex';
+        document.getElementById('previewStatus').textContent    = '버전 비교 중';
+    }
+
+    function exitCompareView() {
+        document.getElementById('compareView').style.display    = 'none';
+        document.getElementById('previewFrame').style.display   = 'block';
+        document.getElementById('compareActions').style.display = 'none';
+        previousHtml = null;
+    }
+
+    function revertVersion() {
+        if (!previousHtml) return;
+        currentHtml = previousHtml;
+        exitCompareView();
+        updatePreview(currentHtml);
+        addSystemMsg('↩ 이전 버전으로 되돌렸습니다.');
+    }
+
+    function acceptVersion() {
+        exitCompareView();
+        updatePreview(currentHtml);
+        addSystemMsg('✓ 새 버전을 유지합니다.');
+    }
+
+    // ─────────────────────────────────────────
+    // 버전 히스토리 모달
+    // ─────────────────────────────────────────
+    let selectedVersionId   = null;
+    let selectedVersionHtml = null;
+
+    async function openVersionModal() {
+        if (!PAGE_ID) return;
+        selectedVersionId   = null;
+        selectedVersionHtml = null;
+        document.getElementById('btnPublishVersion').disabled = true;
+        document.getElementById('btnApplyVersion').disabled   = true;
+        document.getElementById('versionPublishStatus').textContent = '';
+        document.getElementById('versionPreviewLabel').textContent  = '버전을 선택하면 미리보기가 표시됩니다';
+        document.getElementById('versionPreviewFrame').srcdoc = '';
+
+        new bootstrap.Modal(document.getElementById('versionModal')).show();
+
+        const res = await fetch(`/api/pages/${PAGE_ID}/versions`).catch(() => null);
+        const versions = res && res.ok ? await res.json() : [];
+
+        const list = document.getElementById('versionList');
+        if (!versions.length) {
+            list.innerHTML = '<div class="p-3 text-muted small text-center">저장된 버전이 없습니다</div>';
+            return;
+        }
+        list.innerHTML = '';
+        versions.slice().reverse().forEach(v => {  // 최신 버전이 위에
+            const secs   = v.elapsedMs ? (v.elapsedMs / 1000).toFixed(0) + '초' : '-';
+            const tokens = v.tokenCount ? Number(v.tokenCount).toLocaleString() + '개' : '-';
+            const date   = v.createdAt  ? v.createdAt.replace('T', ' ').slice(0, 16) : '';
+
+            const el = document.createElement('div');
+            el.className = 'version-item';
+            el.dataset.id = v.id;
+            el.innerHTML = `
+                <span class="version-badge">v${v.versionNum}</span>
+                <div class="version-meta">
+                    <div class="vm-title">${escHtml(date)}</div>
+                    <div class="vm-info">
+                        ${v.modelName ? escHtml(v.modelName) + ' · ' : ''}${secs} · ${tokens}
+                    </div>
+                </div>
+                <i class="fas fa-chevron-right text-muted" style="font-size:0.75rem;"></i>`;
+            el.onclick = () => selectVersion(v.id, v.versionNum, el);
+            list.appendChild(el);
+        });
+    }
+
+    async function selectVersion(msgId, vNum, el) {
+        // 선택 표시
+        document.querySelectorAll('#versionList .version-item').forEach(i => i.style.background = '');
+        el.style.background = '#3d3d5c';
+
+        document.getElementById('versionPreviewLabel').textContent = `v${vNum} 미리보기 불러오는 중...`;
+        document.getElementById('btnPublishVersion').disabled = true;
+        document.getElementById('btnApplyVersion').disabled   = true;
+
+        const res = await fetch(`/api/pages/${PAGE_ID}/versions/${msgId}`).catch(() => null);
+        if (!res || !res.ok) {
+            document.getElementById('versionPreviewLabel').textContent = '불러오기 실패';
+            return;
+        }
+        const data = await res.json();
+        selectedVersionId   = msgId;
+        selectedVersionHtml = data.html;
+
+        document.getElementById('versionPreviewFrame').srcdoc = data.html;
+        document.getElementById('versionPreviewLabel').textContent = `v${vNum} 미리보기`;
+        document.getElementById('btnPublishVersion').disabled = false;
+        document.getElementById('btnApplyVersion').disabled   = false;
+    }
+
+    async function publishSelectedVersion() {
+        if (!selectedVersionId) return;
+        const res = await fetch(`/api/pages/${PAGE_ID}/versions/${selectedVersionId}/publish`, {
+            method: 'POST'
+        }).catch(() => null);
+        if (res && res.ok) {
+            document.getElementById('versionPublishStatus').textContent = '✓ 게시 완료! 공개 URL에 반영되었습니다.';
+            document.getElementById('versionPublishStatus').style.color = '#7fff7f';
+            // 현재 페이지 htmlContent도 업데이트
+            currentHtml = selectedVersionHtml;
+            updatePreview(currentHtml);
+        } else {
+            document.getElementById('versionPublishStatus').textContent = '게시 실패';
+        }
+    }
+
+    function applySelectedVersion() {
+        if (!selectedVersionHtml) return;
+        currentHtml = selectedVersionHtml;
+        updatePreview(currentHtml);
+        bootstrap.Modal.getInstance(document.getElementById('versionModal')).hide();
+        addSystemMsg(`↩ v${document.querySelector('#versionList .version-item[style*="3d3d5c"] .version-badge')?.textContent || ''} 버전을 에디터에 적용했습니다.`);
+    }
+
+    // ─────────────────────────────────────────
+    // HTML 코드 보기
+    // ─────────────────────────────────────────
+    function showHtmlCode() {
+        if (!currentHtml) { alert('먼저 페이지를 생성해주세요.'); return; }
+        const area = document.getElementById('htmlCodeArea');
+        area.value = currentHtml;
+        const kb = (new Blob([currentHtml]).size / 1024).toFixed(1);
+        document.getElementById('htmlCodeSize').textContent = `${kb} KB · ${currentHtml.length.toLocaleString()}자`;
+        new bootstrap.Modal(document.getElementById('htmlCodeModal')).show();
+    }
+
+    async function copyHtmlCode() {
+        await navigator.clipboard.writeText(document.getElementById('htmlCodeArea').value);
+        const btn = event.target.closest('button');
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check me-1"></i>복사됨';
+        setTimeout(() => btn.innerHTML = orig, 1500);
+    }
+
+    function downloadHtmlCode() {
+        const title = (document.getElementById('pageTitle').value || 'page').replace(/[^a-zA-Z0-9가-힣_-]/g, '_');
+        const blob = new Blob([currentHtml], { type: 'text/html;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = title + '.html';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+
+    // ─────────────────────────────────────────
+    // 저장
+    // ─────────────────────────────────────────
+    function savePage() {
+        if (!currentHtml) { alert('먼저 페이지를 생성해주세요.'); return; }
+        document.getElementById('modalTitle').value = document.getElementById('pageTitle').value || '';
+        new bootstrap.Modal(document.getElementById('saveModal')).show();
+    }
+
+    async function confirmSave() {
+        const title = document.getElementById('modalTitle').value || '제목 없음';
+        const desc  = document.getElementById('modalDesc').value;
+        try {
+            let res;
+            if (PAGE_ID) {
+                res = await fetch(`/api/pages/${PAGE_ID}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, description: desc })
+                });
+            } else {
+                res = await fetch('/api/pages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, description: desc, htmlContent: currentHtml, sessionId })
+                });
+            }
+            const data = await res.json();
+            bootstrap.Modal.getInstance(document.getElementById('saveModal')).hide();
+
+            const url  = window.location.origin + data.publicUrl;
+            const copy = confirm(`저장 완료!\n\n공개 URL:\n${url}\n\n클립보드에 복사할까요?`);
+            if (copy) navigator.clipboard.writeText(url);
+            if (!PAGE_ID) {
+                window.location.href = `/editor/${data.id}`;
+            }
+        } catch (e) {
+            alert('저장 중 오류: ' + e.message);
+        }
+    }
+
+    // ─────────────────────────────────────────
+    // 유틸
+    // ─────────────────────────────────────────
+    function escHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function nowTime() {
+        return new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+    }
+</script>
+</body>
+</html>
