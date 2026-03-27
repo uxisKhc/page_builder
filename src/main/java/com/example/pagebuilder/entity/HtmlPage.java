@@ -27,6 +27,13 @@ public class HtmlPage {
     private String htmlContent;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "project_id")
+    private Project project;
+
+    @Column(name = "page_name", length = 100)
+    private String pageName;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "member_id", nullable = false)
     private Member member;
 
@@ -69,6 +76,12 @@ public class HtmlPage {
 
     public String getHtmlContent() { return htmlContent; }
     public void setHtmlContent(String htmlContent) { this.htmlContent = htmlContent; }
+
+    public Project getProject() { return project; }
+    public void setProject(Project project) { this.project = project; }
+
+    public String getPageName() { return pageName; }
+    public void setPageName(String pageName) { this.pageName = pageName; }
 
     public Member getMember() { return member; }
     public void setMember(Member member) { this.member = member; }

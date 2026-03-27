@@ -102,6 +102,19 @@ public class PageApiController {
         return ResponseEntity.ok(pageService.getSessionChatHistory(sessionId));
     }
 
+    /**
+     * HTML 직접 저장 (인플레이스 편집 후)
+     * PUT /api/pages/{id}/html
+     */
+    @PutMapping("/{id}/html")
+    public ResponseEntity<Map<String, Boolean>> saveHtml(@PathVariable Long id,
+                                                          @RequestBody Map<String, String> body,
+                                                          Authentication auth) {
+        Member member = memberService.findByUsername(auth.getName());
+        pageService.updateHtmlContent(id, body.get("htmlContent"), member);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
     // ── 버전 히스토리 ──────────────────────────────────────
 
     /**

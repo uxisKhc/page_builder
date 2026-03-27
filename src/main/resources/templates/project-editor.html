@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title th:text="${project.name} + ' — Page Builder'">프로젝트 에디터</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<style>
+:root { --primary: #667eea; --secondary: #764ba2; --sidebar-w: 200px; --chat-w: 360px; }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+
+/* ── 최상단 네비 ── */
+.top-nav {
+  height: 48px; display: flex; align-items: center; justify-content: space-between;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  padding: 0 14px; flex-shrink: 0; z-index: 100;
+}
+.top-nav .brand { color: #fff; font-weight: 700; font-size: 0.95rem; text-decoration: none; }
+.top-nav .project-name { color: #fff; font-size: 0.88rem; opacity: 0.9; }
+
+/* ── 3-패널 래퍼 ── */
+.workspace {
+  display: flex; height: calc(100vh - 48px); overflow: hidden;
+}
+
+/* ── 패널 1: 페이지 사이드바 ── */
+.page-sidebar {
+  width: var(--sidebar-w); min-width: var(--sidebar-w);
+  background: #1e1e2e; color: #ccc;
+  display: flex; flex-direction: column;
+  transition: width 0.2s, min-width 0.2s; overflow: hidden;
+}
+.page-sidebar.collapsed { width: 0; min-width: 0; }
+.sidebar-header {
+  padding: 10px 12px; font-size: 0.78rem; font-weight: 700;
+  color: #aaa; text-transform: uppercase; letter-spacing: 0.05em;
+  border-bottom: 1px solid #2d2d44; display: flex; align-items: center; justify-content: space-between;
+}
+.page-list { flex: 1; overflow-y: auto; padding: 6px 0; }
+.page-item {
+  display: flex; align-items: center; padding: 8px 12px; cursor: pointer;
+  border-left: 3px solid transparent; font-size: 0.83rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background 0.15s;
+}
+.page-item:hover { background: #2a2a3e; }
+.page-item.active { background: #2a2a3e; border-left-color: var(--primary); color: #fff; }
+.page-item .page-icon { margin-right: 8px; font-size: 0.75rem; opacity: 0.6; }
+.page-item .page-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.page-item .page-del { opacity: 0; font-size: 0.7rem; cursor: pointer; }
+.page-item:hover .page-del { opacity: 0.5; }
+.page-item .page-del:hover { opacity: 1; color: #f88; }
+.sidebar-add {
+  padding: 10px; border-top: 1px solid #2d2d44;
+}
+
+/* ── 패널 2: 채팅 패널 ── */
+.chat-panel {
+  width: var(--chat-w); min-width: var(--chat-w);
+  background: #fff; display: flex; flex-direction: column;
+  border-right: 1px solid #e0e0e0;
+  transition: width 0.2s, min-width 0.2s; overflow: hidden;
+}
+.chat-panel.collapsed { width: 0; min-width: 0; }
+
+.chat-header {
+  padding: 10px 14px; background: #f8f9fa; border-bottom: 1px solid #e0e0e0;
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+}
+.chat-header .title { font-weight: 700; font-size: 0.88rem; }
+
+.chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.msg-bubble { max-width: 90%; padding: 9px 13px; border-radius: 12px; font-size: 0.83rem; line-height: 1.5; word-break: break-word; }
+.msg-bubble.user { align-self: flex-end; background: var(--primary); color: #fff; border-radius: 12px 12px 2px 12px; }
+.msg-bubble.assistant { align-self: flex-start; background: #f0f0f7; color: #222; border-radius: 12px 12px 12px 2px; }
+.msg-bubble.assistant.streaming { border-left: 3px solid var(--primary); }
+.msg-meta { font-size: 0.69rem; opacity: 0.55; margin-top: 4px; }
+
+.chat-footer { padding: 10px; border-top: 1px solid #e0e0e0; background: #fafafa; flex-shrink: 0; }
+.chat-footer textarea {
+  width: 100%; resize: none; border: 1px solid #ddd; border-radius: 8px;
+  padding: 8px 10px; font-size: 0.83rem; line-height: 1.4;
+  outline: none; background: #fff;
+}
+.chat-footer textarea:focus { border-color: var(--primary); }
+
+.model-row { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+.model-row select { font-size: 0.76rem; padding: 3px 6px; border-radius: 6px; border: 1px solid #ddd; flex: 1; }
+#usageBadge { font-size: 0.68rem; white-space: nowrap; }
+
+.btn-row { display: flex; gap-6px; gap: 6px; margin-top: 7px; }
+.btn-send { flex: 1; font-size: 0.82rem; padding: 6px; }
+.btn-generate { flex: 1; font-size: 0.82rem; padding: 6px; background: #28a745; border: none; color: #fff; border-radius: 6px; cursor: pointer; }
+.btn-generate:hover { background: #218838; }
+.btn-generate:disabled, .btn-send:disabled { opacity: 0.5; pointer-events: none; }
+
+.attach-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.attach-chip { font-size: 0.72rem; background: #e8eaf6; border-radius: 12px; padding: 2px 10px; display: flex; align-items: center; gap: 4px; }
+.attach-chip .rm { cursor: pointer; opacity: 0.5; }
+.attach-chip .rm:hover { opacity: 1; }
+
+/* ── 패널 3: 프리뷰 ── */
+.preview-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #f4f4f8; }
+.preview-toolbar {
+  height: 40px; background: #fff; border-bottom: 1px solid #e0e0e0;
+  display: flex; align-items: center; padding: 0 12px; gap: 8px; flex-shrink: 0;
+}
+.preview-toolbar .page-title-badge {
+  font-size: 0.8rem; font-weight: 600; color: #555;
+  border: 1px solid #ddd; border-radius: 6px; padding: 2px 10px;
+}
+.preview-iframe { flex: 1; width: 100%; border: none; background: #fff; }
+
+/* ── 접힘 토글 버튼 ── */
+.toggle-btn {
+  position: absolute; z-index: 50; width: 20px; cursor: pointer;
+  background: #e0e0e0; border: none; border-radius: 0 4px 4px 0;
+  color: #555; font-size: 0.7rem; padding: 4px 0;
+  writing-mode: initial; display: flex; align-items: center; justify-content: center;
+  height: 40px; top: 54px;
+}
+#toggleSidebar { left: 0; }
+#toggleChat { transition: left 0.2s; }
+
+/* ── 로딩 ── */
+.loading-overlay {
+  position: absolute; inset: 0; background: rgba(255,255,255,0.85);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 200; display: none;
+}
+.loading-overlay.show { display: flex; }
+.spinner-ring { width: 42px; height: 42px; border: 4px solid #e0e0e0; border-top-color: var(--primary); border-radius: 50%; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── 인플레이스 편집 ── */
+.inplace-toolbar {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: #222; color: #fff; border-radius: 10px; padding: 8px 16px;
+  display: flex; gap: 10px; align-items: center; z-index: 500;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3); display: none;
+}
+.inplace-toolbar.show { display: flex; }
+.inplace-toolbar button { background: #444; border: none; color: #fff; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 0.82rem; }
+.inplace-toolbar button.apply { background: #28a745; }
+.inplace-toolbar button.cancel { background: #dc3545; }
+
+/* ── 저장 버튼 ── */
+.save-indicator { font-size: 0.72rem; color: #aaa; }
+
+/* ── 반응형 ── */
+@media (max-width: 768px) {
+  :root { --chat-w: 100vw; }
+  .page-sidebar { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- 상단 네비 -->
+<nav class="top-nav">
+  <div class="d-flex align-items-center gap-3">
+    <a href="/dashboard" class="brand"><i class="fas fa-magic me-1"></i>Page Builder</a>
+    <span class="project-name" id="projectNameDisplay" th:text="${project.name}"></span>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span class="text-white opacity-75 small" th:text="${username}"></span>
+    <a href="/dashboard" class="btn btn-outline-light btn-sm" style="font-size:0.75rem">
+      <i class="fas fa-arrow-left me-1"></i>대시보드
+    </a>
+    <form th:action="@{/logout}" method="post" style="display:inline">
+      <button type="submit" class="btn btn-outline-light btn-sm" style="font-size:0.75rem">로그아웃</button>
+    </form>
+  </div>
+</nav>
+
+<!-- 3-패널 워크스페이스 -->
+<div class="workspace" style="position:relative">
+
+  <!-- 패널1: 페이지 사이드바 -->
+  <div class="page-sidebar" id="pageSidebar">
+    <div class="sidebar-header">
+      <span>페이지</span>
+    </div>
+    <div class="page-list" id="pageList"></div>
+    <div class="sidebar-add">
+      <button class="btn btn-sm w-100" style="background:#2a2a3e;color:#aaa;border:1px dashed #444;font-size:0.78rem"
+              onclick="addPage()">
+        <i class="fas fa-plus me-1"></i>페이지 추가
+      </button>
+    </div>
+  </div>
+
+  <!-- 패널2: 채팅 패널 -->
+  <div class="chat-panel" id="chatPanel">
+    <div class="chat-header">
+      <span class="title"><i class="fas fa-comments me-1 text-primary"></i>AI 채팅</span>
+      <div class="d-flex align-items-center gap-2">
+        <span class="save-indicator" id="saveIndicator"></span>
+        <button class="btn btn-sm btn-outline-secondary p-1" style="font-size:0.7rem" onclick="toggleInplace()" id="btnInplace" title="인플레이스 편집">
+          <i class="fas fa-mouse-pointer"></i>
+        </button>
+      </div>
+    </div>
+    <div class="chat-messages" id="chatMessages">
+      <div class="text-center text-muted py-4" style="font-size:0.82rem" id="chatPlaceholder">
+        <i class="fas fa-comments fa-2x mb-2" style="color:#ddd; display:block"></i>
+        페이지를 선택하거나 추가한 뒤<br>AI와 대화를 시작하세요.
+      </div>
+    </div>
+    <div class="chat-footer">
+      <div class="model-row">
+        <select id="modelSelect" onchange="selectedModel=this.value">
+          <optgroup label="텍스트 모델">
+            <option value="llama-3.3-70b-versatile" selected>Llama 3.3 70B</option>
+            <option value="llama-3.1-8b-instant">Llama 3.1 8B (빠름)</option>
+            <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+            <option value="gemma2-9b-it">Gemma2 9B</option>
+          </optgroup>
+          <optgroup label="비전 모델 (이미지)">
+            <option value="meta-llama/llama-4-scout-17b-16e-instruct">Llama 4 Scout (비전)</option>
+          </optgroup>
+        </select>
+        <span id="usageBadge" class="badge bg-secondary">사용량 로딩중...</span>
+      </div>
+      <div class="attach-row" id="attachRow">
+        <button class="btn btn-sm btn-outline-secondary p-1 px-2" style="font-size:0.75rem" onclick="document.getElementById('fileInput').click()" title="이미지/파일 첨부">
+          <i class="fas fa-paperclip"></i>
+        </button>
+        <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="handleFileAttach(this)">
+        <!-- 참고 파일 선택 -->
+        <select id="refFileSelect" style="font-size:0.72rem;border:1px solid #ddd;border-radius:6px;padding:2px 6px" onchange="addRefFile(this)">
+          <option value="">📄 참고 파일...</option>
+          <th:block th:each="f : ${files}">
+            <option th:value="${f.id}" th:text="${f.originalFilename}"></option>
+          </th:block>
+        </select>
+      </div>
+      <div id="attachedChips" class="d-flex flex-wrap gap-1 mb-1"></div>
+      <textarea id="msgInput" rows="3" placeholder="페이지에 대해 설명하거나 수정을 요청하세요..." onkeydown="handleKey(event)"></textarea>
+      <div class="btn-row">
+        <button class="btn btn-outline-primary btn-send" id="btnSend" onclick="sendChat()">
+          <i class="fas fa-paper-plane me-1"></i>대화
+        </button>
+        <button class="btn-generate" id="btnGenerate" onclick="generatePage()">
+          <i class="fas fa-magic me-1"></i>HTML 생성
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 패널3: 프리뷰 -->
+  <div class="preview-panel">
+    <div class="preview-toolbar">
+      <button class="btn btn-sm btn-outline-secondary p-1 px-2" onclick="toggleSidebar()" title="사이드바 토글">
+        <i class="fas fa-bars"></i>
+      </button>
+      <button class="btn btn-sm btn-outline-secondary p-1 px-2" onclick="toggleChat()" title="채팅 패널 토글">
+        <i class="fas fa-comments"></i>
+      </button>
+      <span class="page-title-badge" id="currentPageBadge">페이지 선택 안됨</span>
+      <div class="ms-auto d-flex gap-2 align-items-center">
+        <button class="btn btn-sm btn-outline-secondary" style="font-size:0.75rem" onclick="saveCurrentHtml()" id="btnSaveHtml">
+          <i class="fas fa-save me-1"></i>저장
+        </button>
+        <a id="btnOpenPage" href="#" target="_blank" class="btn btn-sm btn-outline-success" style="font-size:0.75rem">
+          <i class="fas fa-external-link-alt me-1"></i>보기
+        </a>
+      </div>
+    </div>
+    <!-- 로딩 오버레이 -->
+    <div class="loading-overlay" id="loadingOverlay" style="position:relative">
+      <div class="spinner-ring mb-3"></div>
+      <div style="font-size:0.9rem;color:#555">HTML 생성 중...</div>
+      <div style="font-size:0.78rem;color:#aaa;margin-top:6px" id="loadingSubtext">잠시만 기다려주세요</div>
+    </div>
+    <iframe class="preview-iframe" id="previewFrame" sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+
+</div>
+
+<!-- 인플레이스 편집 툴바 -->
+<div class="inplace-toolbar" id="inplaceToolbar">
+  <span style="font-size:0.78rem;opacity:0.7"><i class="fas fa-mouse-pointer me-1"></i>클릭하여 편집</span>
+  <button class="apply" onclick="applyInplace()"><i class="fas fa-check me-1"></i>적용</button>
+  <button class="cancel" onclick="cancelInplace()"><i class="fas fa-times me-1"></i>종료</button>
+</div>
+
+<!-- Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+  <div id="toast" class="toast align-items-center text-white border-0">
+    <div class="d-flex">
+      <div class="toast-body" id="toastMsg">완료</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script th:inline="javascript">
+// ── 상태 ────────────────────────────────────────────
+const PROJECT_ID = /*[[${project.id}]]*/ null;
+let project = /*[[${project}]]*/ {};
+let selectedModel = 'llama-3.3-70b-versatile';
+let currentPageId = null;
+let currentPageUuid = null;
+let sessionId = null;         // 신규 페이지용 세션
+let attachedImages = [];      // [{base64, mime, name}]
+let attachedFileIds = [];     // 참고 파일 ID
+let inplaceActive = false;
+let busy = false;
+
+// ── 초기화 ──────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  renderPageList();
+  loadUsage();
+  // 첫 페이지 자동 선택
+  if (project.pages && project.pages.length > 0) {
+    selectPage(project.pages[0].id, project.pages[0].uuid);
+  }
+});
+
+// ── 페이지 사이드바 ─────────────────────────────────
+function renderPageList() {
+  const list = document.getElementById('pageList');
+  list.innerHTML = '';
+  if (!project.pages || project.pages.length === 0) {
+    list.innerHTML = '<div style="padding:12px;font-size:0.75rem;color:#666;text-align:center">페이지가 없습니다</div>';
+    return;
+  }
+  project.pages.forEach(pg => {
+    const div = document.createElement('div');
+    div.className = 'page-item' + (pg.id === currentPageId ? ' active' : '');
+    div.dataset.pageId = pg.id;
+    div.innerHTML = `
+      <i class="fas fa-file-alt page-icon"></i>
+      <span class="page-label" title="${pg.pageName}">${pg.pageName}</span>
+      <span class="page-del" onclick="removePage(event,${pg.id})" title="삭제">✕</span>`;
+    div.addEventListener('click', () => selectPage(pg.id, pg.uuid));
+    list.appendChild(div);
+  });
+}
+
+function selectPage(pageId, pageUuid) {
+  currentPageId = pageId;
+  currentPageUuid = pageUuid;
+  sessionId = null;
+  // 사이드바 active 갱신
+  document.querySelectorAll('.page-item').forEach(el => {
+    el.classList.toggle('active', Number(el.dataset.pageId) === pageId);
+  });
+  // 현재 페이지명 표시
+  const pg = project.pages.find(p => p.id === pageId);
+  const name = pg ? pg.pageName : '페이지';
+  document.getElementById('currentPageBadge').textContent = name;
+  document.getElementById('chatPlaceholder').style.display = 'none';
+  // 채팅 히스토리 로드 & 프리뷰 로드
+  loadChatHistory(pageId);
+  loadPreview(pageId);
+  // 보기 링크
+  if (pageUuid) document.getElementById('btnOpenPage').href = '/page/' + pageUuid;
+}
+
+async function loadPreview(pageId) {
+  try {
+    const r = await fetch(`/api/pages/${pageId}`);
+    const data = await r.json();
+    if (data.htmlContent) setPreviewHtml(data.htmlContent);
+  } catch(e) {}
+}
+
+async function loadChatHistory(pageId) {
+  const box = document.getElementById('chatMessages');
+  box.innerHTML = '';
+  try {
+    const r = await fetch(`/api/pages/${pageId}/history`);
+    const msgs = await r.json();
+    msgs.forEach(m => {
+      if (m.role === 'user') appendBubble('user', m.content);
+      else if (m.role === 'assistant' && m.msgType !== 'HTML')
+        appendBubble('assistant', m.content, m.modelName);
+      else if (m.role === 'assistant' && m.msgType === 'HTML')
+        appendBubble('assistant', '✅ HTML 페이지가 생성되었습니다.', m.modelName);
+    });
+  } catch(e) {}
+}
+
+// ── 페이지 추가 / 삭제 ──────────────────────────────
+async function addPage() {
+  const name = prompt('페이지 이름:', '새 페이지');
+  if (!name) return;
+  try {
+    const r = await fetch(`/api/projects/${PROJECT_ID}/pages`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({pageName: name})
+    });
+    project = await r.json();
+    renderPageList();
+    const last = project.pages[project.pages.length - 1];
+    selectPage(last.id, last.uuid);
+    showToast('페이지가 추가되었습니다.');
+  } catch(e) { showToast('오류가 발생했습니다.', 'danger'); }
+}
+
+async function removePage(e, pageId) {
+  e.stopPropagation();
+  if (!confirm('이 페이지를 삭제하시겠습니까?')) return;
+  try {
+    const r = await fetch(`/api/projects/${PROJECT_ID}/pages/${pageId}`, {method:'DELETE'});
+    project = await r.json();
+    if (currentPageId === pageId) {
+      currentPageId = null; currentPageUuid = null;
+      document.getElementById('previewFrame').srcdoc = '';
+      document.getElementById('chatMessages').innerHTML = '';
+      document.getElementById('currentPageBadge').textContent = '페이지 선택 안됨';
+    }
+    renderPageList();
+    showToast('페이지가 삭제되었습니다.');
+  } catch(e) { showToast('오류가 발생했습니다.', 'danger'); }
+}
+
+// ── 채팅 (텍스트 대화) ──────────────────────────────
+function sendChat() {
+  const msg = document.getElementById('msgInput').value.trim();
+  if (!msg || busy) return;
+  if (!currentPageId && !sessionId) sessionId = crypto.randomUUID();
+  appendBubble('user', msg);
+  document.getElementById('msgInput').value = '';
+  setBusy(true);
+
+  const req = {
+    message: msg, modelId: selectedModel,
+    pageId: currentPageId, sessionId: sessionId,
+    fileIds: attachedFileIds
+  };
+  clearAttach();
+
+  const streamBubble = appendBubble('assistant', '', selectedModel, true);
+  let fullText = '';
+
+  const es = new EventSource('/api/chat/talk?' + new URLSearchParams(), {});
+  fetch('/api/chat/talk', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(req)})
+    .then(async res => {
+      // SSE via fetch
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, {stream: true});
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            const data = line.slice(5).trim();
+            if (line.startsWith('event:token') || true) {
+              // handled below
+            }
+          }
+        }
+      }
+    }).catch(() => {});
+
+  // Use proper SSE
+  readTalkStream(req, streamBubble);
+}
+
+function readTalkStream(req, bubble) {
+  const es = new EventSource('/api/chat/talk-sse?' + new URLSearchParams({dummy: Date.now()}));
+  // Fallback: use fetch streaming
+  let ctrl = new AbortController();
+  fetch('/api/chat/talk', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'Accept': 'text/event-stream'},
+    body: JSON.stringify(req),
+    signal: ctrl.signal
+  }).then(async res => {
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', fullText = '', eventName = '';
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream: true});
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        const lines = part.split('\n');
+        eventName = '';
+        let data = '';
+        for (const l of lines) {
+          if (l.startsWith('event:')) eventName = l.slice(6).trim();
+          else if (l.startsWith('data:')) data = l.slice(5).trim();
+        }
+        if (eventName === 'token') {
+          fullText += data;
+          bubble.querySelector('.msg-content').textContent = fullText;
+          bubble.scrollIntoView({block:'end'});
+        } else if (eventName === 'complete') {
+          try {
+            const payload = JSON.parse(data);
+            if (!currentPageId && payload.sessionId) sessionId = payload.sessionId;
+            bubble.classList.remove('streaming');
+          } catch(e){}
+          setBusy(false);
+        } else if (eventName === 'error') {
+          bubble.querySelector('.msg-content').textContent = '오류: ' + data;
+          bubble.classList.remove('streaming');
+          setBusy(false);
+        }
+      }
+    }
+  }).catch(err => {
+    if (err.name !== 'AbortError') setBusy(false);
+  });
+}
+
+// ── HTML 생성 ────────────────────────────────────────
+function generatePage() {
+  if (!currentPageId && !sessionId) { showToast('먼저 페이지를 선택하거나 추가하세요.', 'warning'); return; }
+  const msg = document.getElementById('msgInput').value.trim();
+  if (!msg) { showToast('생성할 내용을 입력하세요.', 'warning'); return; }
+  if (busy) return;
+
+  appendBubble('user', msg);
+  document.getElementById('msgInput').value = '';
+  setLoading(true, '페이지를 선택하여 HTML을 생성하고 있습니다...');
+
+  const req = {
+    message: msg, modelId: selectedModel,
+    pageId: currentPageId, sessionId: sessionId,
+    fileIds: attachedFileIds,
+    images: attachedImages.map(a => a.base64)
+  };
+  clearAttach();
+
+  let tokenCount = 0, startMs = Date.now();
+  let accHtml = '';
+
+  fetch('/api/chat/stream', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'Accept': 'text/event-stream'},
+    body: JSON.stringify(req)
+  }).then(async res => {
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', eventName = '';
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream: true});
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        const lines = part.split('\n');
+        eventName = '';
+        let data = '';
+        for (const l of lines) {
+          if (l.startsWith('event:')) eventName = l.slice(6).trim();
+          else if (l.startsWith('data:')) data = l.slice(5).trim();
+        }
+        if (eventName === 'status') {
+          document.getElementById('loadingSubtext').textContent = data;
+        } else if (eventName === 'token') {
+          accHtml += data;
+          tokenCount++;
+          if (tokenCount % 20 === 0) {
+            document.getElementById('loadingSubtext').textContent =
+              `토큰 ${tokenCount}개 생성됨 (${((Date.now()-startMs)/1000).toFixed(1)}s)`;
+          }
+        } else if (eventName === 'complete') {
+          try {
+            const payload = JSON.parse(data);
+            const html = payload.html || accHtml;
+            if (!currentPageId && payload.sessionId) sessionId = payload.sessionId;
+            setPreviewHtml(html);
+            appendBubble('assistant', `✅ HTML이 생성되었습니다. (${payload.tokenCount || tokenCount}토큰, ${payload.modelName || selectedModel})`);
+            setSaveIndicator('저장됨');
+          } catch(e){}
+          setLoading(false);
+        } else if (eventName === 'error') {
+          showToast('생성 오류: ' + data, 'danger');
+          setLoading(false);
+        }
+      }
+    }
+  }).catch(err => { showToast('연결 오류', 'danger'); setLoading(false); });
+}
+
+// ── 프리뷰 ──────────────────────────────────────────
+function setPreviewHtml(html) {
+  const frame = document.getElementById('previewFrame');
+  frame.srcdoc = html;
+}
+
+async function saveCurrentHtml() {
+  if (!currentPageId) { showToast('저장할 페이지가 선택되지 않았습니다.', 'warning'); return; }
+  // iframe 현재 HTML 읽기
+  try {
+    const frame = document.getElementById('previewFrame');
+    const html = frame.contentDocument.documentElement.outerHTML;
+    await fetch(`/api/pages/${currentPageId}/html`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({htmlContent: html})
+    });
+    setSaveIndicator('저장됨');
+    showToast('저장되었습니다.');
+  } catch(e) { showToast('저장 실패', 'danger'); }
+}
+
+// ── 인플레이스 편집 ─────────────────────────────────
+function toggleInplace() {
+  if (inplaceActive) cancelInplace();
+  else startInplace();
+}
+
+function startInplace() {
+  const frame = document.getElementById('previewFrame');
+  const doc = frame.contentDocument;
+  if (!doc) { showToast('미리보기 콘텐츠가 없습니다.', 'warning'); return; }
+  inplaceActive = true;
+  document.getElementById('inplaceToolbar').classList.add('show');
+  document.getElementById('btnInplace').classList.add('btn-primary');
+  document.getElementById('btnInplace').classList.remove('btn-outline-secondary');
+
+  // 호버/클릭 핸들러 주입
+  const style = doc.createElement('style');
+  style.id = '__inplace_style';
+  style.textContent = `
+    [data-inplace-hover]:hover { outline: 2px dashed #667eea !important; cursor: pointer !important; }
+    [contenteditable="true"] { outline: 2px solid #667eea !important; background: rgba(102,126,234,0.05) !important; }
+  `;
+  doc.head.appendChild(style);
+
+  doc.body.querySelectorAll('*').forEach(el => {
+    el.dataset.inplaceHover = '1';
+    el.addEventListener('click', inplaceClickHandler, true);
+  });
+}
+
+function inplaceClickHandler(e) {
+  e.preventDefault(); e.stopPropagation();
+  const frame = document.getElementById('previewFrame');
+  const doc = frame.contentDocument;
+  // 이전 편집 중인 요소 해제
+  doc.querySelectorAll('[contenteditable="true"]').forEach(el => el.removeAttribute('contenteditable'));
+  e.currentTarget.setAttribute('contenteditable', 'true');
+  e.currentTarget.focus();
+}
+
+function applyInplace() {
+  const frame = document.getElementById('previewFrame');
+  const doc = frame.contentDocument;
+  doc.querySelectorAll('[contenteditable="true"]').forEach(el => el.removeAttribute('contenteditable'));
+  cancelInplace(false);
+  setSaveIndicator('변경됨 (미저장)');
+  showToast('편집이 적용되었습니다. 저장 버튼으로 저장하세요.');
+}
+
+function cancelInplace(cleanup = true) {
+  inplaceActive = false;
+  document.getElementById('inplaceToolbar').classList.remove('show');
+  document.getElementById('btnInplace').classList.remove('btn-primary');
+  document.getElementById('btnInplace').classList.add('btn-outline-secondary');
+  if (!cleanup) return;
+  try {
+    const doc = document.getElementById('previewFrame').contentDocument;
+    const s = doc.getElementById('__inplace_style');
+    if (s) s.remove();
+    doc.body.querySelectorAll('[data-inplace-hover]').forEach(el => {
+      el.removeAttribute('contenteditable');
+      delete el.dataset.inplaceHover;
+      el.removeEventListener('click', inplaceClickHandler, true);
+    });
+  } catch(e) {}
+}
+
+// ── 첨부 ────────────────────────────────────────────
+function handleFileAttach(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const b64 = e.target.result.split(',')[1];
+    attachedImages.push({base64: e.target.result, mime: file.type, name: file.name});
+    addChip(file.name, () => {
+      attachedImages = attachedImages.filter(a => a.name !== file.name);
+    });
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+
+function addRefFile(sel) {
+  const id = sel.value;
+  const name = sel.options[sel.selectedIndex].text;
+  if (!id || attachedFileIds.includes(Number(id))) { sel.value = ''; return; }
+  attachedFileIds.push(Number(id));
+  addChip('📄 ' + name, () => { attachedFileIds = attachedFileIds.filter(f => f !== Number(id)); });
+  sel.value = '';
+}
+
+function addChip(label, onRemove) {
+  const chips = document.getElementById('attachedChips');
+  const span = document.createElement('span');
+  span.className = 'attach-chip';
+  span.innerHTML = `<span>${label}</span><span class="rm" title="제거">✕</span>`;
+  span.querySelector('.rm').addEventListener('click', () => { span.remove(); onRemove(); });
+  chips.appendChild(span);
+}
+
+function clearAttach() {
+  attachedImages = []; attachedFileIds = [];
+  document.getElementById('attachedChips').innerHTML = '';
+}
+
+// ── UI 헬퍼 ─────────────────────────────────────────
+function appendBubble(role, content, model, streaming = false) {
+  const box = document.getElementById('chatMessages');
+  const wrap = document.createElement('div');
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+  wrap.style.alignItems = role === 'user' ? 'flex-end' : 'flex-start';
+  const bubble = document.createElement('div');
+  bubble.className = `msg-bubble ${role}${streaming ? ' streaming' : ''}`;
+  const content_el = document.createElement('div');
+  content_el.className = 'msg-content';
+  content_el.textContent = content;
+  bubble.appendChild(content_el);
+  if (model) {
+    const meta = document.createElement('div');
+    meta.className = 'msg-meta';
+    meta.textContent = model;
+    bubble.appendChild(meta);
+  }
+  wrap.appendChild(bubble);
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+  return bubble;
+}
+
+function setBusy(val) {
+  busy = val;
+  document.getElementById('btnSend').disabled = val;
+  document.getElementById('btnGenerate').disabled = val;
+  document.getElementById('msgInput').disabled = val;
+}
+
+function setLoading(show, text) {
+  busy = show;
+  const ov = document.getElementById('loadingOverlay');
+  const frame = document.getElementById('previewFrame');
+  ov.classList.toggle('show', show);
+  frame.style.display = show ? 'none' : '';
+  if (text) document.getElementById('loadingSubtext').textContent = text;
+  setBusy(show);
+}
+
+function setSaveIndicator(text) {
+  document.getElementById('saveIndicator').textContent = text;
+}
+
+function toggleSidebar() {
+  document.getElementById('pageSidebar').classList.toggle('collapsed');
+}
+
+function toggleChat() {
+  document.getElementById('chatPanel').classList.toggle('collapsed');
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+}
+
+function showToast(msg, type = 'success') {
+  const toast = document.getElementById('toast');
+  toast.className = `toast align-items-center text-white border-0 bg-${type}`;
+  document.getElementById('toastMsg').textContent = msg;
+  new bootstrap.Toast(toast, {delay: 3000}).show();
+}
+
+async function loadUsage() {
+  try {
+    const r = await fetch('/api/chat/groq-usage');
+    const data = await r.json();
+    const badge = document.getElementById('usageBadge');
+    const keys = Object.keys(data);
+    if (keys.length === 0) { badge.textContent = '사용량 없음'; return; }
+    const model = keys[0];
+    const info = data[model];
+    const rem = info['remaining-requests'] || info['remaining_requests'] || '?';
+    badge.textContent = `요청 ${rem}회 남음`;
+    badge.className = Number(rem) < 10 ? 'badge bg-danger' : 'badge bg-success';
+  } catch(e) {
+    document.getElementById('usageBadge').textContent = '사용량 조회 불가';
+  }
+}
+</script>
+</body>
+</html>

@@ -203,6 +203,14 @@ public class PageService {
         return PageDto.from(saved);
     }
 
+    /** HTML 직접 저장 (인플레이스 편집) */
+    public void updateHtmlContent(Long pageId, String htmlContent, Member member) {
+        HtmlPage page = pageRepository.findByIdAndMember(pageId, member)
+                .orElseThrow(() -> new IllegalArgumentException("페이지를 찾을 수 없습니다."));
+        page.setHtmlContent(htmlContent);
+        pageRepository.save(page);
+    }
+
     /**
      * 페이지 제목/설명 업데이트
      */
@@ -319,6 +327,7 @@ public class PageService {
         Map<String, Object> m = new HashMap<>();
         m.put("role", msg.getRole());
         m.put("content", msg.getContent());
+        m.put("msgType", msg.getMsgType());
         if (msg.getModelName() != null) m.put("modelName", msg.getModelName());
         if (msg.getElapsedMs()  != null) m.put("elapsedMs",  msg.getElapsedMs());
         if (msg.getTokenCount() != null) m.put("tokenCount", msg.getTokenCount());

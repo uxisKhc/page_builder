@@ -2,11 +2,13 @@ package com.example.pagebuilder.controller;
 
 import com.example.pagebuilder.dto.FileDto;
 import com.example.pagebuilder.dto.PageDto;
+import com.example.pagebuilder.dto.ProjectDto;
 import com.example.pagebuilder.entity.HtmlPage;
 import com.example.pagebuilder.entity.Member;
 import com.example.pagebuilder.service.FileParseService;
 import com.example.pagebuilder.service.MemberService;
 import com.example.pagebuilder.service.PageService;
+import com.example.pagebuilder.service.ProjectService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -24,6 +26,7 @@ public class ViewController {
     @Autowired private MemberService memberService;
     @Autowired private PageService pageService;
     @Autowired private FileParseService fileParseService;
+    @Autowired private ProjectService projectService;
 
     /**
      * 대시보드 — 내 페이지 목록 + 파일 목록
@@ -67,6 +70,20 @@ public class ViewController {
         model.addAttribute("username", member.getUsername());
         model.addAttribute("pageId", pageId);
         return "editor";
+    }
+
+    /**
+     * 프로젝트 에디터 — 멀티 페이지 편집
+     */
+    @GetMapping("/project/{projectId}")
+    public String projectEditor(@PathVariable Long projectId, Authentication auth, Model model) {
+        Member member = memberService.findByUsername(auth.getName());
+        ProjectDto project = projectService.getMyProject(projectId, member);
+        List<FileDto> files = fileParseService.getMyFiles(member);
+        model.addAttribute("project", project);
+        model.addAttribute("files", files);
+        model.addAttribute("username", member.getUsername());
+        return "project-editor";
     }
 
     /**

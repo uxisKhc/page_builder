@@ -23,6 +23,10 @@
         .empty-state { text-align: center; padding: 60px 20px; color: #aaa; }
         .empty-state i { font-size: 4rem; margin-bottom: 16px; }
         .url-badge { font-size: 0.72rem; cursor: pointer; }
+        .project-card { border: none; border-radius: 12px; box-shadow: 0 2px 15px rgba(0,0,0,0.08); transition: transform 0.2s, box-shadow 0.2s; }
+        .project-card:hover { transform: translateY(-4px); box-shadow: 0 8px 30px rgba(0,0,0,0.15); }
+        .project-card .card-header { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: #fff; border-radius: 12px 12px 0 0 !important; padding: 14px 16px; }
+        .page-chip { display: inline-block; background: #f0f0f7; border-radius: 6px; padding: 2px 10px; font-size: 0.78rem; color: #555; margin: 2px; }
     </style>
 </head>
 <body>
@@ -34,6 +38,7 @@
     </a>
     <div class="d-flex align-items-center gap-3">
         <span class="text-white opacity-75"><i class="fas fa-user me-1"></i><span th:text="${username}"></span></span>
+        <button class="btn btn-warning btn-sm fw-bold" onclick="createProject()"><i class="fas fa-folder-plus me-1"></i>새 프로젝트</button>
         <a href="/editor" class="btn btn-light btn-sm fw-bold"><i class="fas fa-plus me-1"></i>새 페이지</a>
         <a href="/docs" class="btn btn-outline-light btn-sm"><i class="fas fa-book me-1"></i>문서</a>
         <form th:action="@{/logout}" method="post" style="display:inline;">
@@ -43,6 +48,24 @@
 </nav>
 
 <div class="container-fluid px-4 py-4">
+
+    <!-- 프로젝트 목록 -->
+    <div class="row mb-5" id="projectSection">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="section-title mb-0"><i class="fas fa-folder-open me-2"></i>내 프로젝트 <span id="projectCount" class="text-muted fw-normal fs-6"></span></h5>
+                <button class="btn btn-new text-white px-3 py-2 fw-bold" onclick="createProject()">
+                    <i class="fas fa-folder-plus me-2"></i>새 프로젝트
+                </button>
+            </div>
+            <div class="row g-3" id="projectList">
+                <div class="col-12 text-center text-muted py-3" id="projectEmpty" style="display:none">
+                    <i class="fas fa-folder-open fa-2x mb-2" style="color:#ddd"></i>
+                    <p class="mb-0">프로젝트가 없습니다. 여러 페이지를 묶어 관리해 보세요!</p>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- 파일 안내 배너 -->
     <div class="row mb-4" th:if="${!#lists.isEmpty(files)}">
@@ -165,6 +188,75 @@ function deleteFile(id) {
         .then(() => { showToast('파일이 삭제되었습니다.'); setTimeout(() => location.reload(), 1000); })
         .catch(() => showToast('삭제 중 오류가 발생했습니다.', 'danger'));
 }
+
+// ── 프로젝트 관련 ──────────────────────────────────
+function loadProjects() {
+    fetch('/api/projects')
+        .then(r => r.json())
+        .then(projects => {
+            const list = document.getElementById('projectList');
+            const empty = document.getElementById('projectEmpty');
+            const count = document.getElementById('projectCount');
+            count.textContent = projects.length ? `(${projects.length})` : '';
+            // 기존 카드 제거 (empty 제외)
+            [...list.children].forEach(c => { if (c.id !== 'projectEmpty') c.remove(); });
+            if (projects.length === 0) { empty.style.display = ''; return; }
+            empty.style.display = 'none';
+            projects.forEach(p => list.appendChild(buildProjectCard(p)));
+        });
+}
+
+function buildProjectCard(p) {
+    const col = document.createElement('div');
+    col.className = 'col-md-4 col-lg-3';
+    const pageChips = (p.pages || []).map(pg =>
+        `<span class="page-chip"><i class="fas fa-file-alt me-1"></i>${pg.pageName}</span>`
+    ).join('');
+    col.innerHTML = `
+      <div class="card project-card h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-bold text-truncate" style="max-width:160px" title="${p.name}">${p.name}</span>
+          <span class="badge bg-light text-dark">${p.pageCount}페이지</span>
+        </div>
+        <div class="card-body pb-2">
+          <div class="mb-2" style="min-height:28px">${pageChips || '<span class="text-muted small">페이지 없음</span>'}</div>
+          <div class="text-muted mb-2" style="font-size:0.73rem"><i class="fas fa-clock me-1"></i>${formatDate(p.updatedAt)}</div>
+          <div class="d-flex gap-1">
+            <a href="/project/${p.id}" class="btn btn-sm btn-primary flex-fill"><i class="fas fa-edit me-1"></i>편집</a>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteProject(${p.id})"><i class="fas fa-trash"></i></button>
+          </div>
+        </div>
+      </div>`;
+    return col;
+}
+
+function createProject() {
+    const name = prompt('프로젝트 이름을 입력하세요:', '새 프로젝트');
+    if (!name) return;
+    fetch('/api/projects', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name, description: ''})
+    })
+    .then(r => r.json())
+    .then(p => { showToast('프로젝트가 생성되었습니다!'); window.location.href = `/project/${p.id}`; })
+    .catch(() => showToast('생성 중 오류가 발생했습니다.', 'danger'));
+}
+
+function deleteProject(id) {
+    if (!confirm('프로젝트를 삭제하면 모든 페이지가 함께 삭제됩니다. 계속하시겠습니까?')) return;
+    fetch(`/api/projects/${id}`, {method: 'DELETE'})
+        .then(() => { showToast('프로젝트가 삭제되었습니다.'); loadProjects(); })
+        .catch(() => showToast('삭제 중 오류가 발생했습니다.', 'danger'));
+}
+
+function formatDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+document.addEventListener('DOMContentLoaded', loadProjects);
 </script>
 </body>
 </html>
