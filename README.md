@@ -225,7 +225,7 @@ page-builder/
 ### AI 생성 중 화면
 실시간 스트리밍 — 경과 시간, 생성 토큰 수, 코드 미리보기를 동시에 표시합니다.
 
-![AI 생성 중 화면](docs/screenshots/editor-generating.png)
+![AI 생성 중 화면](https://github.com/user-attachments/assets/9ca6d5e8-8852-43d0-bef4-52e93e3646cd)
 
 ---
 
