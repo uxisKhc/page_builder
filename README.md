@@ -222,7 +222,10 @@ page-builder/
 
 ## 스크린샷
 
-> 추후 추가 예정
+### AI 생성 중 화면
+실시간 스트리밍 — 경과 시간, 생성 토큰 수, 코드 미리보기를 동시에 표시합니다.
+
+![AI 생성 중 화면](docs/screenshots/editor-generating.png)
 
 ---
 
