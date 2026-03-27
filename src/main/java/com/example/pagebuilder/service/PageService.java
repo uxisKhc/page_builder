@@ -92,7 +92,28 @@ public class PageService {
         if (ref.images != null) allImages.addAll(ref.images);
         if (request.getImages() != null) allImages.addAll(request.getImages());
 
-        return new StreamContext(history, ref.text, allImages.isEmpty() ? null : allImages, sessionId, pageId);
+        // 프로젝트 페이지 목록 컨텍스트 추가 (멀티페이지 링크 생성 지원)
+        String refText = ref.text;
+        if (pageId != null) {
+            HtmlPage pg = pageRepository.findById(pageId).orElse(null);
+            if (pg != null && pg.getProject() != null) {
+                List<HtmlPage> projectPages = pg.getProject().getPages();
+                if (projectPages.size() > 1) {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("\n\n=== 프로젝트 페이지 목록 (페이지 간 링크 생성 시 사용) ===\n");
+                    for (HtmlPage p : projectPages) {
+                        String name = p.getPageName() != null ? p.getPageName() : p.getTitle();
+                        sb.append("- ").append(name).append(": /page/").append(p.getUuid());
+                        if (p.getId().equals(pageId)) sb.append(" ← 현재 페이지");
+                        sb.append("\n");
+                    }
+                    sb.append("다른 페이지 링크: <a href=\"/page/{UUID}\">링크텍스트</a>\n");
+                    refText = (refText != null ? refText + sb : sb.toString());
+                }
+            }
+        }
+
+        return new StreamContext(history, refText, allImages.isEmpty() ? null : allImages, sessionId, pageId);
     }
 
     /** 스트리밍 완료 후 결과 저장. 신규 세션이면 sessionId 반환, 기존 페이지 수정이면 null */

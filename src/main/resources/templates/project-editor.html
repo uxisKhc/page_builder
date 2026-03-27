@@ -211,7 +211,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
     </div>
     <div class="chat-footer">
       <div class="model-row">
-        <select id="modelSelect" onchange="selectedModel=this.value">
+        <select id="modelSelect" onchange="selectedModel=this.value; showUsageForModel(this.value)">
           <optgroup label="텍스트 모델">
             <option value="llama-3.3-70b-versatile" selected>Llama 3.3 70B</option>
             <option value="llama-3.1-8b-instant">Llama 3.1 8B (빠름)</option>
@@ -364,10 +364,25 @@ function selectPage(pageId, pageUuid) {
 
 async function loadPreview(pageId) {
   try {
-    const r = await fetch(`/api/pages/${pageId}`);
+    // cache: 'no-store' — 브라우저 캐시 무시 (AI 생성 후 즉시 갱신 필요)
+    const r = await fetch(`/api/pages/${pageId}`, {cache: 'no-store'});
+    if (!r.ok) return;
     const data = await r.json();
-    if (data.htmlContent) setPreviewHtml(data.htmlContent);
-  } catch(e) {}
+    // UUID 및 보기 링크 갱신 (서버 최신값 기준)
+    if (data.uuid) {
+      currentPageUuid = data.uuid;
+      document.getElementById('btnOpenPage').href = '/page/' + data.uuid;
+    }
+    const html = data.htmlContent;
+    if (html && html !== '<!-- 빈 페이지 -->') {
+      setPreviewHtml(html);
+    } else {
+      // 빈 페이지 — 흰 화면으로 초기화
+      document.getElementById('previewFrame').srcdoc = '<html><body style="background:#fff"></body></html>';
+    }
+  } catch(e) {
+    console.error('loadPreview 오류:', e);
+  }
 }
 
 async function loadChatHistory(pageId) {
@@ -447,6 +462,7 @@ function sendChat() {
       if (!currentPageId && payload.sessionId) sessionId = payload.sessionId;
       streamBubble.classList.remove('streaming');
       setBusy(false);
+      loadUsage();
     },
     onError(msg) {
       streamBubble.querySelector('.msg-content').textContent = '오류: ' + msg;
@@ -529,6 +545,7 @@ function generatePage() {
         `✅ HTML이 생성되었습니다. (${payload.tokenCount || tokenCount}토큰, ${payload.modelName || selectedModel})`);
       setSaveIndicator('저장됨');
       setLoading(false);
+      loadUsage();
     },
     onError(msg) {
       showToast('생성 오류: ' + msg, 'danger');
@@ -777,21 +794,38 @@ function showToast(msg, type = 'success') {
   new bootstrap.Toast(toast, {delay: 3000}).show();
 }
 
+let usageCache = {};
+
 async function loadUsage() {
   try {
-    const r = await fetch('/api/chat/groq-usage');
-    const data = await r.json();
-    const badge = document.getElementById('usageBadge');
-    const keys = Object.keys(data);
-    if (keys.length === 0) { badge.textContent = '사용량 없음'; return; }
-    const model = keys[0];
-    const info = data[model];
-    const rem = info['remaining-requests'] || info['remaining_requests'] || '?';
-    badge.textContent = `요청 ${rem}회 남음`;
-    badge.className = Number(rem) < 10 ? 'badge bg-danger' : 'badge bg-success';
+    const r = await fetch('/api/chat/groq-usage', {cache: 'no-store'});
+    usageCache = await r.json();
+    showUsageForModel(selectedModel);
   } catch(e) {
     document.getElementById('usageBadge').textContent = '사용량 조회 불가';
   }
+}
+
+function showUsageForModel(modelId) {
+  const badge = document.getElementById('usageBadge');
+  if (!usageCache || Object.keys(usageCache).length === 0) {
+    badge.textContent = '아직 없음';
+    badge.className = 'badge bg-secondary';
+    return;
+  }
+  // 정확히 일치하거나 부분 일치하는 모델 키 탐색
+  const key = Object.keys(usageCache).find(k =>
+    k === modelId || k.includes(modelId) || modelId.includes(k)
+  );
+  if (!key) {
+    badge.textContent = '이 모델 사용 전';
+    badge.className = 'badge bg-secondary';
+    return;
+  }
+  const info = usageCache[key];
+  const remReq = info['x-ratelimit-remaining-requests'] || '?';
+  badge.textContent = `요청 ${remReq}회 남음`;
+  badge.className = Number(remReq) < 10 ? 'badge bg-danger' : 'badge bg-success';
 }
 </script>
 </body>
